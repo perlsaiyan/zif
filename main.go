@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	kallisti "github.com/perlsaiyan/zif/protocol"
+	config "github.com/perlsaiyan/zif/config"
 )
 
 // You generally won't need this unless you're processing stuff with
@@ -51,6 +52,7 @@ type model struct {
 	socket   net.Conn
 	input    textinput.Model
 	msdp     *kallisti.MSDPHandler
+	config   *config.Config
 }
 
 type updateMessage struct {
@@ -65,15 +67,15 @@ func (m model) Init() tea.Cmd {
 }
 
 // Handle triggers
-func triggers(c net.Conn, line string) {
+func triggers(m *model, line string) {
 	r, _ := regexp.Compile("^Enter your account name.")
-	if len(os.Getenv("MUD_USER")) > 0 && r.MatchString(line) {
-		c.Write([]byte(os.Getenv("MUD_USER") + "\n"))
+	if len(m.config.Session.Username) > 0 && r.MatchString(line) {
+		m.socket.Write([]byte(m.config.Session.Username + "\n"))
 	}
 
 	r, _ = regexp.Compile("^Please enter your account password")
-	if len(os.Getenv("MUD_PASSWORD")) > 0 && r.MatchString(line) {
-		c.Write([]byte(os.Getenv("MUD_PASSWORD") + "\n"))
+	if len(m.config.Session.Password) > 0 && r.MatchString(line) {
+		m.socket.Write([]byte(m.config.Session.Password + "\n"))
 	}
 }
 
@@ -124,7 +126,7 @@ func mudReader(sub chan updateMessage, socket net.Conn, m *model) tea.Cmd {
 			if buffer[0] == 249 {      //this is GO AHEAD
 				log.Println("Got GA")
 				sub <- updateMessage{content: outbuf + "\n"}
-				triggers(socket, outbuf)
+				triggers(m, outbuf)
 				outbuf = ""
 			} else if buffer[0] == 251 { // WILL
 				_, _ = socket.Read(buffer)
@@ -179,7 +181,7 @@ func mudReader(sub chan updateMessage, socket net.Conn, m *model) tea.Cmd {
 			}
 		} else if buffer[0] == 10 {
 			// newline, print big buf and go
-			triggers(socket, outbuf)
+			triggers(m, outbuf)
 			sub <- updateMessage{content: outbuf + "\n"}
 			outbuf = ""
 		} else {
@@ -323,6 +325,8 @@ func max(a, b int) int {
 
 func main() {
 
+	c := config.GetConfig()
+
 	f, err := tea.LogToFile("debug.log", "debug")
 	if err != nil {
 		fmt.Println("fatal:", err)
@@ -332,17 +336,18 @@ func main() {
 
 	// Load some text for our viewport
 	content := ""
-	if len(os.Getenv("MUD_ADDRESS")) == 0 {
-		fmt.Printf("Please set MUD_ADDRESS environment variable.\n")
+	if len(c.Session.Hostname) == 0 {
+		fmt.Printf("Please set Hostname in config file.\n")
 		os.Exit(1)
 	}
-	conn, err := net.Dial("tcp", os.Getenv("MUD_ADDRESS"))
+	conn, err := net.Dial("tcp", c.Session.Hostname)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
 
 	m := model{content: string(content), sub: make(chan updateMessage), socket: conn, input: textinput.New(), msdp: kallisti.NewMSDP()}
+	m.config = c
 	m.input.Placeholder = "Welcome to Kallisti"
 	m.input.Focus()
 	m.input.CharLimit = 156
