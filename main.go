@@ -18,8 +18,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	kallisti "github.com/perlsaiyan/zif/protocol"
 	config "github.com/perlsaiyan/zif/config"
+	kallisti "github.com/perlsaiyan/zif/protocol"
 )
 
 // You generally won't need this unless you're processing stuff with
@@ -53,6 +53,7 @@ type model struct {
 	input    textinput.Model
 	msdp     *kallisti.MSDPHandler
 	config   *config.Config
+	tt_count int
 }
 
 type updateMessage struct {
@@ -137,8 +138,17 @@ func mudReader(sub chan tea.Msg, socket net.Conn, m *model) tea.Cmd {
 				_, _ = socket.Read(buffer)
 				log.Println("Debug WILL:", buffer)
 				if buffer[0] == 1 { // ECHO / password mask
-					log.Printf("Got password mask request")
-					//sub <- textinputMsg{password_mode: true, toggle_password: true}
+					log.Printf("Got password mask request (IAC WILL ECHO)")
+					if m.input.EchoMode == textinput.EchoNormal {
+						m.input.EchoMode = textinput.EchoPassword
+						log.Printf("Sending DO ECHO\n")
+						buf := []byte{255, 254, 1} // send IAC DO ECHO
+						m.socket.Write(buf)
+						sub <- textinputMsg{password_mode: true, toggle_password: true}
+					} else {
+						log.Printf("Skipping DO ECHO (loop protection) (currently %v)\n", m.input.EchoMode)
+					}
+
 				} else if buffer[0] == 69 {
 					log.Printf("Offered MSDP, accepting")
 					buf := []byte{255, 253, 69, 255, kallisti.SB, kallisti.MSDP, kallisti.MSDP_VAR, 'L', 'I', 'S', 'T',
@@ -152,8 +162,8 @@ func mudReader(sub chan tea.Msg, socket net.Conn, m *model) tea.Cmd {
 			} else if buffer[0] == 252 { // WONT
 				_, _ = socket.Read(buffer)
 				if buffer[0] == 1 {
-					log.Printf("Got password unmask request")
-					//sub <- textinputMsg{password_mode: false, toggle_password: true}
+					log.Printf("Got password unmask request (IAC WONT ECHO)")
+					sub <- textinputMsg{password_mode: false, toggle_password: true}
 				} else {
 					log.Printf("SERVER WONT %v\n", buffer)
 				}
@@ -161,6 +171,7 @@ func mudReader(sub chan tea.Msg, socket net.Conn, m *model) tea.Cmd {
 				_, _ = socket.Read(buffer)
 				log.Printf("Got DO %v", buffer)
 				if buffer[0] == 24 { // TERM TYPE
+					//buf := []byte{255, 250, 24, 0, 'x', 't', 'e', 'r', 'm', '-', '2', '5', '6', 'c', 'o', 'l', 'o', 'r', 255, 240}
 					buf := []byte{255, 251, 24}
 					log.Printf("Sending %v", buf)
 					socket.Write(buf)
@@ -182,6 +193,21 @@ func mudReader(sub chan tea.Msg, socket net.Conn, m *model) tea.Cmd {
 				switch sb[0] {
 				case 69:
 					m.msdp.HandleSB(socket, sb)
+				case 24:
+					switch m.tt_count {
+					case 0:
+						log.Printf("Sending zif termtype")
+						m.socket.Write([]byte{255, 250, 24, 0, 'z', 'i', 'f', 255, 240})
+						m.tt_count += 1
+					case 1:
+						log.Printf("Sending XTERM-256COLOR termtype")
+						m.socket.Write([]byte{255, 250, 24, 0, 'X', 'T', 'E', 'R', 'M', '-', '2', '5', '6', 'C', 'O', 'L', 'O', 'R', 255, 240})
+						m.tt_count += 1
+					default:
+						log.Printf("Sending MTTS 2831 termtype")
+						m.socket.Write([]byte{255, 250, 24, 0, 'M', 'T', 'T', 'S', ' ', '2', '8', '3', '1', 255, 240})
+					}
+
 				}
 			} else {
 				log.Printf("Unknown IAC %v\n", buffer[0])
@@ -224,11 +250,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.EchoMode = textinput.EchoNormal
 			}
 
-			var icmd tea.Cmd
-			m.input, icmd = m.input.Update(msg)
 			cmds = append(cmds, waitForActivity(m.sub))
-			cmds = append(cmds, icmd)
-			return m, tea.Sequence(cmds...)
 		}
 
 	case tea.KeyMsg:
@@ -245,6 +267,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if order == "#MSDP" {
 						msdp_vals := fmt.Sprintf("MSDP: %+v", m.msdp)
 						m.sub <- updateMessage{content: msdp_vals}
+					} else if order == "#PASSWORD" {
+						m.sub <- textinputMsg{password_mode: false, toggle_password: true}
 					}
 
 				} else {
@@ -373,7 +397,7 @@ func main() {
 		return
 	}
 
-	m := model{content: string(content), sub: make(chan tea.Msg), socket: conn, input: textinput.New(), msdp: kallisti.NewMSDP()}
+	m := model{content: string(content), sub: make(chan tea.Msg), socket: conn, input: textinput.New(), msdp: kallisti.NewMSDP(), tt_count: 0}
 	m.config = c
 	m.input.Placeholder = "Welcome to Kallisti"
 	m.input.Focus()
