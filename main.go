@@ -45,7 +45,7 @@ var (
 )
 
 type model struct {
-	sub      chan updateMessage
+	sub      chan tea.Msg
 	content  string
 	ready    bool
 	viewport viewport.Model
@@ -57,6 +57,11 @@ type model struct {
 
 type updateMessage struct {
 	content string
+}
+
+type textinputMsg struct {
+	password_mode   bool
+	toggle_password bool
 }
 
 func (m model) Init() tea.Cmd {
@@ -108,7 +113,7 @@ func terminalEcho(show bool) {
 }
 
 // Read from the MUD stream, parse MSDP, etc
-func mudReader(sub chan updateMessage, socket net.Conn, m *model) tea.Cmd {
+func mudReader(sub chan tea.Msg, socket net.Conn, m *model) tea.Cmd {
 
 	buffer := make([]byte, 1)
 	var outbuf string
@@ -117,7 +122,7 @@ func mudReader(sub chan updateMessage, socket net.Conn, m *model) tea.Cmd {
 		_, err := socket.Read(buffer)
 		if err != nil {
 			fmt.Println("Error: ", err)
-			os.Exit(1)
+			sub <- tea.KeyMsg.String
 		}
 
 		if buffer[0] == 255 {
@@ -132,7 +137,8 @@ func mudReader(sub chan updateMessage, socket net.Conn, m *model) tea.Cmd {
 				_, _ = socket.Read(buffer)
 				log.Println("Debug WILL:", buffer)
 				if buffer[0] == 1 { // ECHO / password mask
-
+					log.Printf("Got password mask request")
+					//sub <- textinputMsg{password_mode: true, toggle_password: true}
 				} else if buffer[0] == 69 {
 					log.Printf("Offered MSDP, accepting")
 					buf := []byte{255, 253, 69, 255, kallisti.SB, kallisti.MSDP, kallisti.MSDP_VAR, 'L', 'I', 'S', 'T',
@@ -146,7 +152,8 @@ func mudReader(sub chan updateMessage, socket net.Conn, m *model) tea.Cmd {
 			} else if buffer[0] == 252 { // WONT
 				_, _ = socket.Read(buffer)
 				if buffer[0] == 1 {
-					//		terminalEcho(true)
+					log.Printf("Got password unmask request")
+					//sub <- textinputMsg{password_mode: false, toggle_password: true}
 				} else {
 					log.Printf("SERVER WONT %v\n", buffer)
 				}
@@ -193,9 +200,9 @@ func mudReader(sub chan updateMessage, socket net.Conn, m *model) tea.Cmd {
 }
 
 // A command that waits for the activity on a channel.
-func waitForActivity(sub chan updateMessage) tea.Cmd {
+func waitForActivity(sub chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
-		return updateMessage(<-sub)
+		return tea.Msg(<-sub)
 	}
 }
 
@@ -206,6 +213,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	)
 
 	switch msg := msg.(type) {
+	case textinputMsg:
+		if msg.toggle_password {
+			if msg.password_mode {
+				log.Printf("Turning on password mode\n")
+				m.input.EchoMode = textinput.EchoPassword
+
+			} else {
+				log.Printf("Turning off password mode\n")
+				m.input.EchoMode = textinput.EchoNormal
+			}
+
+			var icmd tea.Cmd
+			m.input, icmd = m.input.Update(msg)
+			cmds = append(cmds, waitForActivity(m.sub))
+			cmds = append(cmds, icmd)
+			return m, tea.Sequence(cmds...)
+		}
+
 	case tea.KeyMsg:
 		if k := msg.String(); k == "ctrl+c" {
 			return m, tea.Quit
@@ -225,6 +250,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.socket.Write([]byte(m.input.Value() + "\n"))
 				}
+			} else {
+				m.socket.Write([]byte("\n"))
 			}
 			m.input.Reset()
 		} else {
@@ -346,7 +373,7 @@ func main() {
 		return
 	}
 
-	m := model{content: string(content), sub: make(chan updateMessage), socket: conn, input: textinput.New(), msdp: kallisti.NewMSDP()}
+	m := model{content: string(content), sub: make(chan tea.Msg), socket: conn, input: textinput.New(), msdp: kallisti.NewMSDP()}
 	m.config = c
 	m.input.Placeholder = "Welcome to Kallisti"
 	m.input.Focus()
