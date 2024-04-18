@@ -18,6 +18,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/davecgh/go-spew/spew"
 	config "github.com/perlsaiyan/zif/config"
 	kallisti "github.com/perlsaiyan/zif/protocol"
 )
@@ -117,7 +118,7 @@ func terminalEcho(show bool) {
 func mudReader(sub chan tea.Msg, socket net.Conn, m *model) tea.Cmd {
 
 	buffer := make([]byte, 1)
-	var outbuf string
+	var outbuf []byte
 
 	for {
 		_, err := socket.Read(buffer)
@@ -131,9 +132,9 @@ func mudReader(sub chan tea.Msg, socket net.Conn, m *model) tea.Cmd {
 			_, _ = socket.Read(buffer) // read one char for now to eat GA
 			if buffer[0] == 249 {      //this is GO AHEAD
 				log.Println("Got GA")
-				sub <- updateMessage{content: outbuf + "\n"}
-				triggers(m, outbuf)
-				outbuf = ""
+				sub <- updateMessage{content: string(outbuf) + "\n"}
+				triggers(m, string(outbuf))
+				outbuf = outbuf[:0]
 			} else if buffer[0] == 251 { // WILL
 				_, _ = socket.Read(buffer)
 				log.Println("Debug WILL:", buffer)
@@ -214,11 +215,11 @@ func mudReader(sub chan tea.Msg, socket net.Conn, m *model) tea.Cmd {
 			}
 		} else if buffer[0] == 10 {
 			// newline, print big buf and go
-			triggers(m, outbuf)
-			sub <- updateMessage{content: outbuf + "\n"}
-			outbuf = ""
+			triggers(m, string(outbuf))
+			sub <- updateMessage{content: string(outbuf) + "\n"}
+			outbuf = outbuf[:0]
 		} else {
-			outbuf += string(buffer[0])
+			outbuf = append(outbuf, buffer[0])
 		}
 
 	}
@@ -265,7 +266,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(order) > 0 {
 				if order[0] == '#' {
 					if order == "#MSDP" {
-						msdp_vals := fmt.Sprintf("MSDP: %+v", m.msdp)
+						msdp_vals := fmt.Sprintf("MSDP:\n %+v", spew.Sdump(m.msdp))
 						m.sub <- updateMessage{content: msdp_vals}
 					} else if order == "#PASSWORD" {
 						m.sub <- textinputMsg{password_mode: false, toggle_password: true}

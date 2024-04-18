@@ -20,16 +20,112 @@ const MSDP_ARRAY_OPEN = byte(5)
 const MSDP_ARRAY_CLOSE = byte(6)
 
 type MSDPHandler struct {
-	Server_ID    string
-	Group        [9]GroupMember
-	Commands     []string
-	Reportables  []string
-	Account_Name string
-	Uptime       string
-	Room_Weather string
-	c            net.Conn
+	Server_ID          string
+	Group              [9]GroupMember
+	Commands           []string
+	Reportables        []string
+	AccountName        string
+	Uptime             string
+	RoomWeather        string
+	CharacterName      string
+	ServerTime         string
+	SnippetVersion     string
+	Affects            []Affect
+	Alignment          int
+	Experience         uint
+	ExperienceMax      uint
+	ExperienceTNL      int
+	Health             int
+	HealthMax          int
+	Level              int
+	Race               string
+	Class              string
+	Mana               int
+	ManaMax            int
+	Wimpy              int
+	Practice           int
+	Gold               int
+	BankGold           int
+	Stamina            int
+	StaminaMax         int
+	Hitroll            int
+	Damroll            int
+	AC                 int
+	Str                int
+	Int                int
+	Wis                int
+	Dex                int
+	Con                int
+	Luk                int
+	StrPerm            int
+	IntPerm            int
+	WisPerm            int
+	DexPerm            int
+	ConPerm            int
+	LukPerm            int
+	StrMax             int
+	IntMax             int
+	WisMax             int
+	DexMax             int
+	ConMax             int
+	QPoints            int
+	Position           string
+	WhoFlags           string
+	CombatStance       string
+	MountName          string
+	MountHealth        int
+	MountStamina       int
+	MountStaminaMax    int
+	Ranged             bool
+	Prompt             string
+	Wield              string
+	Hold               string
+	Shield             string
+	Quickdraw          string
+	Hunger             int
+	Thirst             int
+	Bardsong           string
+	OpponentHealth     int
+	OpponentHealthMax  int
+	OpponentStamina    int
+	OpponentStaminaMax int
+	OpponentLevel      int
+	OpponentName       string
+	OpponentNumber     int
+	AreaName           string
+	AreaMinLevel       int
+	AreaMaxLevel       int
+	RoomExits          struct{}
+	RoomName           string
+	RoomTerrain        string
+	RoomVnum           string
+	WorldTime          int
+	ClientID           string
+	ClientVersion      string
+	PluginID           string
+	AnsiColors         bool
+	Xterm256Colors     bool
+	UTF8               bool
+	Sound              bool
+	MXP                bool
+	ParagonLevel       int
+	HeroPoints         int
+	HeroPointsTNL      int
+	NoblePoints        int
+	NoblePointsTNL     int
+	PCInZone           bool
+	PCInRoom           bool
+	GroupLevel         int
+	Equipment          string
+	Queue              int
+	RemortLevels       int
+	RemortLapsTotal    int
+
+	c net.Conn
 }
 
+type Affect struct {
+}
 type GroupMember struct {
 	Class        string
 	Flags        string
@@ -173,11 +269,17 @@ func (m *MSDPHandler) HandleSB(conn net.Conn, b []byte) {
 			case "SERVER_ID":
 				m.Server_ID, b = readString(b)
 			case "ACCOUNT_NAME":
-				m.Account_Name, b = readString(b)
+				m.AccountName, b = readString(b)
 			case "UPTIME":
 				m.Uptime, b = readString(b)
 			case "ROOM_WEATHER":
-				m.Room_Weather, b = readString(b)
+				m.RoomWeather, b = readString(b)
+			case "REPORTABLE_VARIABLES":
+
+			case "WORLD_TIME":
+				var tmp string
+				tmp, b = readString(b)
+				m.WorldTime, _ = strconv.Atoi(tmp)
 			default:
 				log.Printf("Unhandled SB VAL on %v: %v\n", cur, b)
 			}
