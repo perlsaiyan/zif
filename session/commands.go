@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -23,11 +24,24 @@ var internalCommands = []Command{
 func CmdSession(s *SessionHandler, cmd string) {
 	fields := strings.Fields(cmd)
 	if len(fields) < 1 {
-		s.ActiveSession().Content += "Usage: #session <name> <address:port>" + "\n"
+		s.ActiveSession().Output("Usage: #session <name> <address:port>" + "\n")
 		return
+	} else if len(fields) == 1 {
+		_, ok := s.Sessions[fields[0]]
+		if ok {
+			log.Printf("About to send change message '%s' to '%s'", s.Active, fields[0])
+			s.Active = fields[0]
+			s.Sub <- SessionChangeMsg{ActiveSession: s.ActiveSession()}
+			log.Printf("SessionChangeMsg sent: '%s' to '%s'", s.Active, fields[0])
+		} else {
+			s.ActiveSession().Output("Invalid session.\n")
+		}
+	} else if len(fields) == 2 {
+		s.AddSession(fields[0], fields[1])
+	} else {
+		s.ActiveSession().Output("Usage: #session <name> <address:port>" + "\n")
 	}
 
-	s.AddSession(fields[0])
 }
 func CmdHelp(s *SessionHandler, cmd string) {
 	s.ActiveSession().Content += fmt.Sprintf("Here's your help: %s\n", cmd)
@@ -44,7 +58,11 @@ func makeRow(name string, address string) table.Row {
 func CmdSessions(s *SessionHandler, cmd string) {
 	var rows []table.Row
 	for i := range s.Sessions {
-		rows = append(rows, makeRow(s.Sessions[i].Name, s.Sessions[i].Address))
+		if s.Sessions[i].Name == s.ActiveSession().Name {
+			rows = append(rows, makeRow("> "+s.Sessions[i].Name, s.Sessions[i].Address))
+		} else {
+			rows = append(rows, makeRow(s.Sessions[i].Name, s.Sessions[i].Address))
+		}
 	}
 
 	t := table.New([]table.Column{

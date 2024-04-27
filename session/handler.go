@@ -57,16 +57,22 @@ func NewHandler() SessionHandler {
 	sh := SessionHandler{
 		Active:   "Zif",
 		Sessions: make(map[string]*Session),
-		Sub:      make(chan tea.Msg),
+		Sub:      make(chan tea.Msg, 5),
 	}
 	sh.Sessions["Zif"] = &s
 	return sh
 }
 
-func (s *SessionHandler) AddSession(name string) {
+func (s *SessionHandler) AddSession(name string, address string) {
 	new := Session{
 		Name: name,
 	}
 
 	s.Sessions[name] = &new
+
+	if len(address) > 1 {
+		s.ActiveSession().Output("attempt to connect to: " + address + "\n")
+	} else {
+		s.ActiveSession().Output("created nil session: " + name + "\n")
+	}
 }

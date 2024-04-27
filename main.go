@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -84,7 +85,11 @@ func (m *ZifModel) ToggleSideBar(side string) {
 // A command that waits for the activity on a channel.
 func waitForActivity(sub chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
-		return tea.Msg(<-sub)
+		log.Printf("Waiting for message on sub channel")
+		msg := <-sub
+		log.Printf("Got %+v message", msg)
+		return tea.Msg(msg)
+		//return tea.Msg(<-sub)
 	}
 }
 
@@ -94,11 +99,18 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds []tea.Cmd
 	)
 
+	//log.Printf("Receiving message: %s", msg)
 	switch msg := msg.(type) {
 
 	case session.SessionChangeMsg:
+		log.Printf("Setting active session to %s", msg.ActiveSession.Name)
+		m.StatusBar.FirstColumn = m.SessionHandler.Active
+		m.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
+		m.Viewport.GotoBottom()
+		cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
 
 	case session.UpdateMessage:
+		m.StatusBar.FirstColumn = m.SessionHandler.Active
 		jump := m.Viewport.AtBottom()
 		m.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
 		if jump {
@@ -238,6 +250,8 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, viewport.Sync(m.RightSideBar))
 			}
 		}
+	default:
+		log.Printf("Unknown message type: %s", reflect.TypeOf(msg))
 	}
 
 	return m, tea.Batch(cmds...)
