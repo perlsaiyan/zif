@@ -22,10 +22,12 @@ type Session struct {
 	Name string
 
 	Content      string
+	Address      string
 	Socket       net.Conn
 	MSDP         *kallisti.MSDPHandler
 	TTCount      int
 	PasswordMode bool
+	Connected    bool
 }
 
 func (s *SessionHandler) HandleInput(cmd string) {

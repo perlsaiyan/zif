@@ -38,7 +38,7 @@ type ZifModel struct {
 func (m ZifModel) Init() tea.Cmd {
 	return tea.Batch(
 		waitForActivity(m.SessionHandler.Sub), // wait for activity
-		tea.SetWindowTitle("Flowtest"),
+		tea.SetWindowTitle("zif"),
 	)
 }
 
@@ -163,7 +163,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Viewport = viewport.New(width, msg.Height-verticalMarginHeight)
 			m.Viewport.YPosition = 0
 			m.Viewport.HighPerformanceRendering = useHighPerformanceRenderer
-			m.Viewport.SetContent("blah")
+			m.Viewport.SetContent("Welcome to Zif, the Zero Insertion Force mud client.\n\n")
 			m.Ready = true
 
 			m.LeftSideBar = viewport.New(25, msg.Height-verticalMarginHeight)
@@ -191,7 +191,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			m.Viewport.Width = width
-			m.Viewport.SetContent("blah")
+
 			m.Viewport.Height = msg.Height - verticalMarginHeight
 			m.LeftSideBar.Width = 25
 			m.LeftSideBar.SetContent("LEFT")
@@ -204,7 +204,14 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.StatusBar.Height = 1
 		m.StatusBar.SetSize(msg.Width)
-		m.StatusBar.SetContent(m.SessionHandler.ActiveSession().Name, "Not Connected", "100% Efficient", "SB")
+		connected := func() string {
+			if m.SessionHandler.ActiveSession().Connected {
+				return "✓"
+			} else {
+				return "✗"
+			}
+		}
+		m.StatusBar.SetContent(m.SessionHandler.ActiveSession().Name, "Not Connected", "100% Efficient", connected())
 		m.Input.Width = msg.Width - 1
 
 		if useHighPerformanceRenderer {
