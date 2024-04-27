@@ -99,8 +99,11 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case session.SessionChangeMsg:
 
 	case session.UpdateMessage:
-		log.Printf("Got UpdateMessage %v", msg)
+		jump := m.Viewport.AtBottom()
 		m.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
+		if jump {
+			m.Viewport.GotoBottom()
+		}
 		cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
 
 	case textinputMsg:
@@ -122,8 +125,15 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		} else if k := msg.String(); k == "pgup" || k == "pgdown" || k == "end" || k == "home" {
 			var viewcmd tea.Cmd
+			switch k {
+			case "end":
+				m.Viewport.GotoBottom()
+			case "home":
+				m.Viewport.GotoTop()
+			default:
+				m.Viewport, viewcmd = m.Viewport.Update(msg)
+			}
 
-			m.Viewport, viewcmd = m.Viewport.Update(msg)
 			cmds = append(cmds, viewcmd)
 		} else if k := msg.String(); k == "f2" {
 			m.ToggleSideBar("left")

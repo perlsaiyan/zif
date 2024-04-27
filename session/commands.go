@@ -16,9 +16,19 @@ type Command struct {
 
 var internalCommands = []Command{
 	{Name: "help", Fn: CmdHelp},
+	{Name: "session", Fn: CmdSession},
 	{Name: "sessions", Fn: CmdSessions},
 }
 
+func CmdSession(s *SessionHandler, cmd string) {
+	fields := strings.Fields(cmd)
+	if len(fields) < 1 {
+		s.ActiveSession().Content += "Usage: #session <name> <address:port>" + "\n"
+		return
+	}
+
+	s.AddSession(fields[0])
+}
 func CmdHelp(s *SessionHandler, cmd string) {
 	s.ActiveSession().Content += fmt.Sprintf("Here's your help: %s\n", cmd)
 }
@@ -45,7 +55,7 @@ func CmdSessions(s *SessionHandler, cmd string) {
 		WithRows(rows).
 		BorderRounded()
 
-	s.ActiveSession().Content += t.View() + "\n"
+	s.ActiveSession().Output(t.View() + "\n")
 }
 
 func (m *SessionHandler) ParseInternalCommand(cmd string) {
@@ -57,8 +67,12 @@ func (m *SessionHandler) ParseInternalCommand(cmd string) {
 		if strings.HasPrefix(internalCommands[lookup].Name, strings.ToLower(parsed[0])) {
 			if len(args) < 2 {
 				internalCommands[lookup].Fn(m, "")
+				m.Sub <- UpdateMessage{Session: m.ActiveSession().Name}
+				return
 			} else {
 				internalCommands[lookup].Fn(m, args[1])
+				m.Sub <- UpdateMessage{Session: m.ActiveSession().Name}
+				return
 			}
 		}
 	}
