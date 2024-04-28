@@ -2,7 +2,6 @@ package session
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -29,15 +28,16 @@ func CmdSession(s *SessionHandler, cmd string) {
 	} else if len(fields) == 1 {
 		_, ok := s.Sessions[fields[0]]
 		if ok {
-			log.Printf("About to send change message '%s' to '%s'", s.Active, fields[0])
 			s.Active = fields[0]
 			s.Sub <- SessionChangeMsg{ActiveSession: s.ActiveSession()}
-			log.Printf("SessionChangeMsg sent: '%s' to '%s'", s.Active, fields[0])
+
 		} else {
 			s.ActiveSession().Output("Invalid session.\n")
 		}
 	} else if len(fields) == 2 {
 		s.AddSession(fields[0], fields[1])
+		s.Active = fields[0]
+		s.Sub <- SessionChangeMsg{ActiveSession: s.ActiveSession()}
 	} else {
 		s.ActiveSession().Output("Usage: #session <name> <address:port>" + "\n")
 	}
@@ -97,7 +97,16 @@ func (m *SessionHandler) ParseInternalCommand(cmd string) {
 	m.Sub <- UpdateMessage{Session: m.ActiveSession().Name}
 }
 
+// TODO: Probably should have this as a Session method, not SessionHandler
 func (m *SessionHandler) ParseCommand(cmd string) {
-	m.ActiveSession().Content += cmd
+	if !m.ActiveSession().PasswordMode {
+		m.ActiveSession().Content += cmd + "\n"
+	}
+
+	// TODO: We'll want to check this for aliases and/or variables
+	if m.ActiveSession().Connected {
+		m.ActiveSession().Socket.Write([]byte(cmd + "\n"))
+	}
+
 	m.Sub <- UpdateMessage{Session: m.ActiveSession().Name}
 }

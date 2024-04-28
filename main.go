@@ -18,11 +18,6 @@ import (
 
 const useHighPerformanceRenderer = false
 
-type textinputMsg struct {
-	password_mode   bool
-	toggle_password bool
-}
-
 type ZifModel struct {
 	Name               string
 	Input              textinput.Model
@@ -118,9 +113,9 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
 
-	case textinputMsg:
-		if msg.toggle_password {
-			if msg.password_mode {
+	case session.TextinputMsg:
+		if msg.Toggle_password {
+			if msg.Password_mode {
 				log.Printf("Turning on password mode\n")
 				m.Input.EchoMode = textinput.EchoPassword
 
