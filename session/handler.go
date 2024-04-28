@@ -1,16 +1,12 @@
 package session
 
 import (
+	"log"
 	"net"
 
 	tea "github.com/charmbracelet/bubbletea"
 	kallisti "github.com/perlsaiyan/zif/protocol"
 )
-
-// The active session has changed
-type SessionChangeMsg struct {
-	ActiveSession *Session
-}
 
 type SessionHandler struct {
 	Active   string
@@ -39,7 +35,10 @@ func (s *SessionHandler) HandleInput(cmd string) {
 			s.ParseCommand(cmd + "\n")
 		}
 	} else {
-		//m.socket.Write([]byte("\n"))
+		// Just press enter
+		if s.ActiveSession().Connected {
+			s.ActiveSession().Socket.Write([]byte("\n"))
+		}
 	}
 }
 
@@ -49,17 +48,17 @@ func (s SessionHandler) ActiveSession() *Session {
 
 func NewHandler() SessionHandler {
 	s := Session{
-		Name:    "Zif",
+		Name:    "zif",
 		Content: "",
 		MSDP:    &kallisti.MSDPHandler{},
 		Socket:  nil,
 	}
 	sh := SessionHandler{
-		Active:   "Zif",
+		Active:   "zif",
 		Sessions: make(map[string]*Session),
 		Sub:      make(chan tea.Msg, 5),
 	}
-	sh.Sessions["Zif"] = &s
+	sh.Sessions["zif"] = &s
 	return sh
 }
 
@@ -72,6 +71,18 @@ func (s *SessionHandler) AddSession(name string, address string) {
 
 	if len(address) > 1 {
 		s.ActiveSession().Output("attempt to connect to: " + address + "\n")
+		var err error
+		s.Sessions[name].Socket, err = net.Dial("tcp", address)
+		if err != nil {
+			log.Printf("Error: %v\n", err)
+			delete(s.Sessions, name)
+			return
+		}
+
+		s.Sessions[name].Connected = true
+		//spawn reader
+		go s.Sessions[name].mudReader(s.Sub)
+
 	} else {
 		s.ActiveSession().Output("created nil session: " + name + "\n")
 	}
