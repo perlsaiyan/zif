@@ -56,7 +56,7 @@ func NewHandler() SessionHandler {
 	sh := SessionHandler{
 		Active:   "zif",
 		Sessions: make(map[string]*Session),
-		Sub:      make(chan tea.Msg, 5),
+		Sub:      make(chan tea.Msg, 50),
 	}
 	sh.Sessions["zif"] = &s
 	return sh
@@ -72,6 +72,7 @@ func (s *SessionHandler) AddSession(name string, address string) {
 	if len(address) > 1 {
 		s.ActiveSession().Output("attempt to connect to: " + address + "\n")
 		var err error
+		s.Sessions[name].Address = address
 		s.Sessions[name].Socket, err = net.Dial("tcp", address)
 		if err != nil {
 			log.Printf("Error: %v\n", err)

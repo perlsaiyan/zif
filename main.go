@@ -100,12 +100,24 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case session.SessionChangeMsg:
 		log.Printf("Setting active session to %s", msg.ActiveSession.Name)
 		m.StatusBar.FirstColumn = m.SessionHandler.Active
+		if m.SessionHandler.ActiveSession().Connected {
+			m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().Address
+		} else {
+			m.StatusBar.SecondColumn = "Not Connected"
+		}
+
 		m.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
 		m.Viewport.GotoBottom()
 		cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
 
 	case session.UpdateMessage:
 		m.StatusBar.FirstColumn = m.SessionHandler.Active
+		if m.SessionHandler.ActiveSession().Connected {
+			m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().Address
+		} else {
+			m.StatusBar.SecondColumn = "Not Connected"
+		}
+
 		jump := m.Viewport.AtBottom()
 		m.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
 		if jump {
