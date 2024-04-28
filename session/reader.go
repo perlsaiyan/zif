@@ -25,24 +25,24 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 
 			_, _ = s.Socket.Read(buffer) // read one char for now to eat GA
 			if buffer[0] == 249 {        //this is GO AHEAD
-				log.Println("Got GA")
+				//log.Println("Got GA")
 				s.Content += string(outbuf) + "\n"
 				sub <- UpdateMessage{Session: s.Name, Content: string(outbuf) + "\n"}
 				//triggers(m, string(outbuf))
 				outbuf = outbuf[:0]
 			} else if buffer[0] == 251 { // WILL
 				_, _ = s.Socket.Read(buffer)
-				log.Println("Debug WILL:", buffer)
+				//log.Println("Debug WILL:", buffer)
 				if buffer[0] == 1 { // ECHO / password mask
-					log.Printf("Got password mask request (IAC WILL ECHO)")
+					//log.Printf("Got password mask request (IAC WILL ECHO)")
 					if !s.PasswordMode {
 						s.PasswordMode = true
-						log.Printf("Sending DO ECHO\n")
+						//log.Printf("Sending DO ECHO\n")
 						buf := []byte{255, 254, 1} // send IAC DO ECHO
 						s.Socket.Write(buf)
 						sub <- TextinputMsg{Session: s.Name, Password_mode: true, Toggle_password: true}
 					} else {
-						log.Printf("Skipping DO ECHO (loop protection) (currently %v)\n", s.PasswordMode)
+						//log.Printf("Skipping DO ECHO (loop protection) (currently %v)\n", s.PasswordMode)
 					}
 
 				} else if buffer[0] == 69 {
@@ -53,19 +53,19 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 					//m.msdp.HandleWill(m.socket)
 
 				} else {
-					log.Printf("SERVER WILL %v\n", buffer)
+					log.Printf("SERVER WILL %v (unhandled)\n", buffer)
 				}
 			} else if buffer[0] == 252 { // WONT
 				_, _ = s.Socket.Read(buffer)
 				if buffer[0] == 1 {
-					log.Printf("Got password unmask request (IAC WONT ECHO)")
+					//log.Printf("Got password unmask request (IAC WONT ECHO)")
 					sub <- TextinputMsg{Session: s.Name, Password_mode: false, Toggle_password: true}
 				} else {
-					log.Printf("SERVER WONT %v\n", buffer)
+					log.Printf("SERVER WONT %v (unhandled)\n", buffer)
 				}
 			} else if buffer[0] == 253 { // DO
 				_, _ = s.Socket.Read(buffer)
-				log.Printf("Got DO %v", buffer)
+				//log.Printf("Got DO %v", buffer)
 				if buffer[0] == 24 { // TERM TYPE
 					//buf := []byte{255, 250, 24, 0, 'x', 't', 'e', 'r', 'm', '-', '2', '5', '6', 'c', 'o', 'l', 'o', 'r', 255, 240}
 					buf := []byte{255, 251, 24}
