@@ -166,7 +166,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Input.Placeholder = ""
 			order := strings.TrimSpace(m.Input.Value())
 			m.SessionHandler.HandleInput(order)
-			m.Input.Reset()
+			m.Input.SetValue("")
 		} else {
 			var inputcmd tea.Cmd
 			m.Input, inputcmd = m.Input.Update(msg)
