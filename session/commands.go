@@ -16,8 +16,14 @@ type Command struct {
 
 var internalCommands = []Command{
 	{Name: "help", Fn: CmdHelp},
+	{Name: "msdp", Fn: CmdMSDP},
 	{Name: "session", Fn: CmdSession},
 	{Name: "sessions", Fn: CmdSessions},
+}
+
+func CmdMSDP(s *SessionHandler, cmd string) {
+	buf := fmt.Sprintf("PC in Room: %v, PC in Zone: %v\n", s.ActiveSession().MSDP.PCInRoom, s.ActiveSession().MSDP.PCInZone)
+	s.ActiveSession().Output(buf)
 }
 
 func CmdSession(s *SessionHandler, cmd string) {

@@ -50,7 +50,7 @@ func NewHandler() SessionHandler {
 	s := Session{
 		Name:    "zif",
 		Content: "",
-		MSDP:    &kallisti.MSDPHandler{},
+		MSDP:    kallisti.NewMSDP(),
 		Socket:  nil,
 	}
 	sh := SessionHandler{
@@ -65,6 +65,7 @@ func NewHandler() SessionHandler {
 func (s *SessionHandler) AddSession(name string, address string) {
 	new := Session{
 		Name: name,
+		MSDP: kallisti.NewMSDP(),
 	}
 
 	s.Sessions[name] = &new

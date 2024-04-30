@@ -80,9 +80,9 @@ func (m *ZifModel) ToggleSideBar(side string) {
 // A command that waits for the activity on a channel.
 func waitForActivity(sub chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
-		log.Printf("Waiting for message on sub channel")
+		//log.Printf("Waiting for message on sub channel")
 		msg := <-sub
-		log.Printf("Got %+v message", msg)
+		//log.Printf("Got %+v message", msg)
 		return tea.Msg(msg)
 		//return tea.Msg(<-sub)
 	}
@@ -113,7 +113,11 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case session.UpdateMessage:
 		m.StatusBar.FirstColumn = m.SessionHandler.Active
 		if m.SessionHandler.ActiveSession().Connected {
-			m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().Address
+			if len(m.SessionHandler.ActiveSession().MSDP.RoomName) > 0 {
+				m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().MSDP.RoomName
+			} else {
+				m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().Address
+			}
 		} else {
 			m.StatusBar.SecondColumn = "Not Connected"
 		}
