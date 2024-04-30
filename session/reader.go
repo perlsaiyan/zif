@@ -3,6 +3,8 @@ package session
 import (
 	"fmt"
 	"log"
+	"net"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	kallisti "github.com/perlsaiyan/zif/protocol"
@@ -15,17 +17,31 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 	var outbuf []byte
 
 	for {
+		s.Socket.SetReadDeadline(time.Now().Add(20 * time.Millisecond))
+		timeout := false
 		_, err := s.Socket.Read(buffer)
 		if err != nil {
-			fmt.Println("Error: ", err)
-			sub <- tea.KeyMsg.String
-			s.Connected = false
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				timeout = true
+				// time out
+			} else {
+				fmt.Println("Error: ", err)
+				sub <- tea.KeyMsg.String
+				s.Connected = false
+				// TODO return a command to close out the session, otherwise we just hang
+				return nil
 
-			// TODO return a command to close out the session, otherwise we just hang
-			return nil
+			}
+
 		}
-
-		if buffer[0] == 255 {
+		if timeout {
+			// we timed out without reading anything
+			if len(outbuf) > 0 {
+				s.Content += string(outbuf)
+				sub <- UpdateMessage{Session: s.Name, Content: string(outbuf)}
+				outbuf = outbuf[:0]
+			}
+		} else if buffer[0] == 255 {
 
 			_, _ = s.Socket.Read(buffer) // read one char for now to eat GA
 			if buffer[0] == 249 {        //this is GO AHEAD
@@ -38,14 +54,15 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 				_, _ = s.Socket.Read(buffer)
 				//log.Println("Debug WILL:", buffer)
 				if buffer[0] == 1 { // ECHO / password mask
-					//log.Printf("Got password mask request (IAC WILL ECHO)")
+					log.Printf("Got password mask request (IAC WILL ECHO)")
 					if !s.PasswordMode {
 						s.PasswordMode = true
 						//log.Printf("Sending DO ECHO\n")
-						buf := []byte{255, 254, 1} // send IAC DO ECHO
+						buf := []byte{255, 253, 1} // send IAC DO ECHO
 						s.Socket.Write(buf)
 						sub <- TextinputMsg{Session: s.Name, Password_mode: true, Toggle_password: true}
 					} else {
+						//sub <- TextinputMsg{Session: s.Name, Password_mode: true, Toggle_password: true}
 						//log.Printf("Skipping DO ECHO (loop protection) (currently %v)\n", s.PasswordMode)
 					}
 
@@ -62,7 +79,7 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 			} else if buffer[0] == 252 { // WONT
 				_, _ = s.Socket.Read(buffer)
 				if buffer[0] == 1 {
-					//log.Printf("Got password unmask request (IAC WONT ECHO)")
+					log.Printf("Got password unmask request (IAC WONT ECHO)")
 					sub <- TextinputMsg{Session: s.Name, Password_mode: false, Toggle_password: true}
 				} else {
 					log.Printf("SERVER WONT %v (unhandled)\n", buffer)
@@ -121,7 +138,5 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 		} else {
 			outbuf = append(outbuf, buffer[0])
 		}
-
 	}
-
 }
