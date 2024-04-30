@@ -21,7 +21,7 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 			sub <- tea.KeyMsg.String
 			s.Connected = false
 
-			// TODO return a command to close out the session
+			// TODO return a command to close out the session, otherwise we just hang
 			return nil
 		}
 
