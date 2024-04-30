@@ -19,6 +19,10 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 		if err != nil {
 			fmt.Println("Error: ", err)
 			sub <- tea.KeyMsg.String
+			s.Connected = false
+
+			// TODO return a command to close out the session
+			return nil
 		}
 
 		if buffer[0] == 255 {
@@ -50,7 +54,7 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 					buf := []byte{255, 253, 69, 255, kallisti.SB, kallisti.MSDP, kallisti.MSDP_VAR, 'L', 'I', 'S', 'T',
 						kallisti.MSDP_VAL, 'C', 'O', 'M', 'M', 'A', 'N', 'D', 'S', 255, kallisti.SE}
 					s.Socket.Write(buf)
-					//m.msdp.HandleWill(m.socket)
+					s.MSDP.HandleWill(s.Socket)
 
 				} else {
 					log.Printf("SERVER WILL %v (unhandled)\n", buffer)
@@ -88,7 +92,7 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 				log.Printf("Good SB: %v", sb)
 				switch sb[0] {
 				case 69:
-					//m.msdp.HandleSB(socket, sb)
+					s.MSDP.HandleSB(s.Socket, sb)
 				case 24:
 					switch s.TTCount {
 					case 0:
