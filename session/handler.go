@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"log"
 	"net"
 
@@ -17,6 +18,8 @@ type SessionHandler struct {
 type Session struct {
 	Name string
 
+	Context      context.Context
+	Cancel       context.CancelFunc
 	Content      string
 	Address      string
 	Socket       net.Conn
@@ -24,6 +27,8 @@ type Session struct {
 	TTCount      int
 	PasswordMode bool
 	Connected    bool
+	Ticker       *Ticker
+	Sub          chan tea.Msg
 }
 
 func (s *SessionHandler) HandleInput(cmd string) {
@@ -47,16 +52,18 @@ func (s SessionHandler) ActiveSession() *Session {
 }
 
 func NewHandler() SessionHandler {
+	sub := make(chan tea.Msg, 50)
 	s := Session{
 		Name:    "zif",
 		Content: "",
 		MSDP:    kallisti.NewMSDP(),
 		Socket:  nil,
+		Sub:     sub,
 	}
 	sh := SessionHandler{
 		Active:   "zif",
 		Sessions: make(map[string]*Session),
-		Sub:      make(chan tea.Msg, 50),
+		Sub:      sub,
 	}
 	sh.Sessions["zif"] = &s
 	return sh
@@ -66,9 +73,12 @@ func (s *SessionHandler) AddSession(name string, address string) {
 	new := Session{
 		Name: name,
 		MSDP: kallisti.NewMSDP(),
+		Sub:  s.Sub,
 	}
 
 	s.Sessions[name] = &new
+	ctx := context.Background()
+	new.Context, new.Cancel = context.WithCancel(ctx)
 
 	if len(address) > 1 {
 		s.ActiveSession().Output("attempt to connect to: " + address + "\n")
@@ -82,7 +92,9 @@ func (s *SessionHandler) AddSession(name string, address string) {
 		}
 
 		s.Sessions[name].Connected = true
-		//spawn reader
+		NewSessionTicker(new.Context, s.Sessions[name])
+
+		//spawn reader, ticker, etc
 		go s.Sessions[name].mudReader(s.Sub)
 
 	} else {
