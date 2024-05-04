@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
+	"plugin"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/perlsaiyan/zif/config"
 	"github.com/perlsaiyan/zif/session"
 
 	"github.com/mistakenelf/teacup/statusbar"
@@ -20,6 +22,8 @@ const useHighPerformanceRenderer = false
 
 type ZifModel struct {
 	Name               string
+	Config             *config.Config
+	Plugins            []*plugin.Plugin
 	Input              textinput.Model
 	LeftSideBar        viewport.Model
 	LeftSideBarActive  bool
@@ -209,6 +213,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.RightSideBar.HighPerformanceRendering = useHighPerformanceRenderer
 			m.RightSideBar.SetContent("RIGHT")
 
+			m.Input.Cursor.BlinkSpeed = 500 * time.Millisecond
 			// This is only necessary for high performance rendering, which in
 			// most cases you won't need.
 			//
@@ -261,8 +266,9 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, viewport.Sync(m.RightSideBar))
 			}
 		}
-	default:
-		log.Printf("Unknown message type: %s", reflect.TypeOf(msg))
+
+		//default:
+		//	log.Printf("Unknown message type: %s", reflect.TypeOf(msg))
 	}
 
 	return m, tea.Batch(cmds...)

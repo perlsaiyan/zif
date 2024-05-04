@@ -30,6 +30,7 @@ var MSDP_FIELDS = map[string]MSDPFieldDefinition{
 	"COMMANDS":             {"Commands", "list"},
 	"GROUP":                {"Group", "grouplist"},
 	"REPORTABLE_VARIABLES": {"Reportables", "list"},
+	"ROOM_NAME":            {"RoomName", "string"},
 	"ROOM_WEATHER":         {"RoomWeather", "string"},
 	"SERVER_ID":            {"Server_ID", "string"},
 	"SERVER_TIME":          {"ServerTime", "integer"},
