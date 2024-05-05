@@ -109,7 +109,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.StatusBar.SecondColumn = "Not Connected"
 		}
-
+		m.StatusBar.ThirdColumn = fmt.Sprintf("%d/1000", m.Viewport.TotalLineCount())
 		m.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
 		m.Viewport.GotoBottom()
 		cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
@@ -125,12 +125,14 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.StatusBar.SecondColumn = "Not Connected"
 		}
+		m.StatusBar.ThirdColumn = fmt.Sprintf("%d/1000", m.Viewport.TotalLineCount())
 
 		jump := m.Viewport.AtBottom()
 		m.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
 		if jump {
 			m.Viewport.GotoBottom()
 		}
+
 		cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
 
 	case session.TextinputMsg:
@@ -200,7 +202,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Viewport = viewport.New(width, msg.Height-verticalMarginHeight)
 			m.Viewport.YPosition = 0
 			m.Viewport.HighPerformanceRendering = useHighPerformanceRenderer
-			m.Viewport.SetContent("Welcome to Zif, the Zero Insertion Force mud client.\n\n")
+			m.Viewport.SetContent(session.Motd())
 			m.Ready = true
 
 			m.LeftSideBar = viewport.New(25, msg.Height-verticalMarginHeight)
@@ -284,6 +286,7 @@ func main() {
 	defer f.Close()
 
 	m := ZifModel{Input: textinput.New(), SessionHandler: session.NewHandler()}
+	m.SessionHandler.Active = "zif"
 	m.Input.Placeholder = "Welcome to Zif, type #HELP to get started"
 	m.Input.Focus()
 	m.Input.CharLimit = 156

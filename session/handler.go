@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	kallisti "github.com/perlsaiyan/zif/protocol"
@@ -18,6 +19,7 @@ type SessionHandler struct {
 type Session struct {
 	Name string
 
+	Birth        time.Time
 	Context      context.Context
 	Cancel       context.CancelFunc
 	Content      string
@@ -55,10 +57,11 @@ func NewHandler() SessionHandler {
 	sub := make(chan tea.Msg, 50)
 	s := Session{
 		Name:    "zif",
-		Content: "",
+		Content: Motd(),
 		MSDP:    kallisti.NewMSDP(),
 		Socket:  nil,
 		Sub:     sub,
+		Birth:   time.Now(),
 	}
 	sh := SessionHandler{
 		Active:   "zif",
@@ -66,14 +69,16 @@ func NewHandler() SessionHandler {
 		Sub:      sub,
 	}
 	sh.Sessions["zif"] = &s
+	//sh.Sub <- UpdateMessage{Session: "zif"}
 	return sh
 }
 
 func (s *SessionHandler) AddSession(name string, address string) {
 	new := Session{
-		Name: name,
-		MSDP: kallisti.NewMSDP(),
-		Sub:  s.Sub,
+		Name:  name,
+		Birth: time.Now(),
+		MSDP:  kallisti.NewMSDP(),
+		Sub:   s.Sub,
 	}
 
 	s.Sessions[name] = &new
@@ -100,4 +105,15 @@ func (s *SessionHandler) AddSession(name string, address string) {
 	} else {
 		s.ActiveSession().Output("created nil session: " + name + "\n")
 	}
+}
+
+func Motd() string {
+	return "\n\n\x1b[38;2;165;80;223m" + " ░▒▓████████▓▒░▒▓█▓▒░▒▓████████▓▒░\n" +
+		"\x1b[38;2;165;80;223m" + "         ▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░\n" +
+		"\x1b[38;2;165;80;223m" + "      ░▒▓██▓▒░░▒▓█▓▒░▒▓█▓▒░\n" +
+		"\x1b[38;2;165;80;223m" + "    ░▒▓██▓▒░  ░▒▓█▓▒░▒▓██████▓▒░\n" +
+		"\x1b[38;2;165;80;223m" + "  ░▒▓██▓▒░    ░▒▓█▓▒░▒▓█▓▒░\n" +
+		"\x1b[38;2;165;80;223m" + " ░▒▓█▓▒░      ░▒▓█▓▒░▒▓█▓▒░\n" +
+		"\x1b[38;2;165;80;223m" + " ░▒▓████████▓▒░▒▓█▓▒░▒▓█▓▒░\n\n" +
+		" Zero Insertion Force Mud Client\n\n"
 }
