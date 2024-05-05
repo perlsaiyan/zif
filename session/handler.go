@@ -31,6 +31,7 @@ type Session struct {
 	Connected    bool
 	Ticker       *Ticker
 	Sub          chan tea.Msg
+	Plugins      PluginRegistry
 }
 
 func (s *SessionHandler) HandleInput(cmd string) {

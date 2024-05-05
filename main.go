@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -277,12 +278,22 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func main() {
+	var kallistiFlag = flag.Bool("kallisti", false, "Use Kallisti plugin")
+	var helpFlag = flag.Bool("help", false, "Show help")
+
+	flag.Parse()
+
+	if *helpFlag {
+		flag.Usage()
+		os.Exit(0)
+	}
 
 	f, err := tea.LogToFile("debug.log", "debug")
 	if err != nil {
 		fmt.Println("fatal:", err)
 		os.Exit(1)
 	}
+
 	defer f.Close()
 
 	m := ZifModel{Input: textinput.New(), SessionHandler: session.NewHandler()}
@@ -291,6 +302,16 @@ func main() {
 	m.Input.Focus()
 	m.Input.CharLimit = 156
 	m.Input.Width = 20
+
+	if *kallistiFlag {
+
+		_, err := plugin.Open("./kallisti.so")
+		if err != nil {
+			fmt.Printf("Error locating kallisti plugin: %s.\n", err.Error())
+			os.Exit(1)
+		}
+
+	}
 
 	m.StatusBar = statusbar.New(statusbar.ColorConfig{
 		Foreground: lipgloss.AdaptiveColor{Dark: "#ffffff", Light: "#ffffff"},

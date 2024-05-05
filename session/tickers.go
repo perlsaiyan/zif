@@ -77,7 +77,7 @@ func CmdTickers(s *Session, cmd string, h *SessionHandler) {
 		WithRows(rows).
 		BorderRounded()
 
-	s.Output("TIckers:\n" + t.View() + "\n")
+	s.Output("Tickers:\n" + t.View() + "\n")
 }
 
 // test context cancel
