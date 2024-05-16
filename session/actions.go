@@ -72,14 +72,14 @@ func CmdActions(s *Session, cmd string, h *SessionHandler) {
 	}
 
 	t := table.New([]table.Column{
-		table.NewColumn("name", "Name", 10).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
+		table.NewColumn("name", "Name", 25).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
 		table.NewColumn("enabled", "Enabled", 10).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
 		table.NewColumn("count", "Count", 20).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center).Foreground(lipgloss.Color("#8c8"))),
 	}).
 		WithRows(rows).
 		BorderRounded()
 
-	s.Output("Actions:\n" + t.View() + "\n")
+	s.Output(t.View() + "\n")
 }
 
 func PossibleRoomScanner(s *Session, matches ActionMatches) {

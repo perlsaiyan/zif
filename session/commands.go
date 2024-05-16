@@ -20,6 +20,7 @@ type Command struct {
 var internalCommands = []Command{
 	{Name: "actions", Fn: CmdActions},
 	{Name: "cancel", Fn: CmdCancelTicker},
+	{Name: "events", Fn: CmdEvents},
 	{"help", CmdHelp},
 	{Name: "msdp", Fn: CmdMSDP},
 	{Name: "session", Fn: CmdSession},

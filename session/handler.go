@@ -29,10 +29,14 @@ type Session struct {
 	TTCount      int
 	PasswordMode bool
 	Connected    bool
-	Ticker       *Ticker
-	Sub          chan tea.Msg
-	Plugins      PluginRegistry
-	Actions      *ActionRegistry
+
+	Sub chan tea.Msg
+
+	// Various Registries
+	Tickers *TickerRegistry
+	Plugins *PluginRegistry
+	Actions *ActionRegistry
+	Events  *EventRegistry
 }
 
 func (s *SessionHandler) HandleInput(cmd string) {
@@ -82,6 +86,7 @@ func (s *SessionHandler) AddSession(name string, address string) {
 		MSDP:    kallisti.NewMSDP(),
 		Sub:     s.Sub,
 		Actions: NewActionRegistry(),
+		Events:  NewEventRegistry(),
 	}
 
 	s.Sessions[name] = &new
@@ -100,7 +105,7 @@ func (s *SessionHandler) AddSession(name string, address string) {
 		}
 
 		s.Sessions[name].Connected = true
-		NewSessionTicker(new.Context, s.Sessions[name])
+		NewTickerRegistry(new.Context, s.Sessions[name])
 
 		//spawn reader, ticker, etc
 		go s.Sessions[name].mudReader(s.Sub)
