@@ -32,6 +32,7 @@ type Session struct {
 	Ticker       *Ticker
 	Sub          chan tea.Msg
 	Plugins      PluginRegistry
+	Actions      *ActionRegistry
 }
 
 func (s *SessionHandler) HandleInput(cmd string) {
@@ -76,10 +77,11 @@ func NewHandler() SessionHandler {
 
 func (s *SessionHandler) AddSession(name string, address string) {
 	new := Session{
-		Name:  name,
-		Birth: time.Now(),
-		MSDP:  kallisti.NewMSDP(),
-		Sub:   s.Sub,
+		Name:    name,
+		Birth:   time.Now(),
+		MSDP:    kallisti.NewMSDP(),
+		Sub:     s.Sub,
+		Actions: NewActionRegistry(),
 	}
 
 	s.Sessions[name] = &new
