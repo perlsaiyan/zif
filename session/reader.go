@@ -37,6 +37,7 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 		if timeout {
 			// we timed out without reading anything
 			if len(outbuf) > 0 {
+				s.ActionParser(outbuf)
 				s.Content += string(outbuf)
 				sub <- UpdateMessage{Session: s.Name, Content: string(outbuf)}
 				outbuf = outbuf[:0]
@@ -132,6 +133,7 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 		} else if buffer[0] == 10 {
 			// newline, print big buf and go
 			//triggers(m, string(outbuf))
+			s.ActionParser(outbuf)
 			s.Content += string(outbuf) + "\n"
 			sub <- UpdateMessage{Session: s.Name, Content: string(outbuf) + "\n"}
 			outbuf = outbuf[:0]
