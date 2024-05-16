@@ -8,7 +8,7 @@ import (
 	"github.com/evertras/bubble-table/table"
 )
 
-type Ticker struct {
+type TickerRegistry struct {
 	Context context.Context
 	Entries map[string]TickerRecord
 }
@@ -21,8 +21,8 @@ type TickerRecord struct {
 	NextFire time.Time
 }
 
-func NewSessionTicker(ctx context.Context, s *Session) {
-	s.Ticker = &Ticker{Context: ctx, Entries: make(map[string]TickerRecord)}
+func NewTickerRegistry(ctx context.Context, s *Session) {
+	s.Tickers = &TickerRegistry{Context: ctx, Entries: make(map[string]TickerRecord)}
 	go SessionTicker(s)
 }
 
@@ -37,13 +37,13 @@ func SessionTicker(s *Session) {
 
 		default:
 
-			for k, v := range s.Ticker.Entries {
+			for k, v := range s.Tickers.Entries {
 				if v.NextFire.Before(time.Now()) {
 					v.LastFire = time.Now()
 					s.Output("Firing ticker " + v.Name + "\n")
 					s.Socket.Write([]byte(v.Command + "\n"))
 					v.NextFire = time.Now().Add(time.Duration(v.Interval) * time.Millisecond)
-					s.Ticker.Entries[k] = v
+					s.Tickers.Entries[k] = v
 				}
 			}
 
@@ -65,19 +65,19 @@ func makeTickerRow(name string, last time.Time, next time.Time) table.Row {
 
 func CmdTickers(s *Session, cmd string, h *SessionHandler) {
 	var rows []table.Row
-	for _, i := range s.Ticker.Entries {
+	for _, i := range s.Tickers.Entries {
 		rows = append(rows, makeTickerRow(i.Name, i.LastFire, i.NextFire))
 	}
 
 	t := table.New([]table.Column{
-		table.NewColumn("name", "Name", 10).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
+		table.NewColumn("name", "Name", 25).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
 		table.NewColumn("last fire", "Last Fire", 20).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
 		table.NewColumn("next fire", "Next Fire", 20).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center).Foreground(lipgloss.Color("#8c8"))),
 	}).
 		WithRows(rows).
 		BorderRounded()
 
-	s.Output("Tickers:\n" + t.View() + "\n")
+	s.Output(t.View() + "\n")
 }
 
 // test context cancel
@@ -88,7 +88,7 @@ func CmdCancelTicker(s *Session, cmd string, h *SessionHandler) {
 }
 
 func CmdTestTicker(s *Session, cmd string, h *SessionHandler) {
-	s.Ticker.Entries["test1"] = TickerRecord{
+	s.Tickers.Entries["test1"] = TickerRecord{
 		Name:     "test1",
 		Interval: 5000,
 		Command:  "smile",
