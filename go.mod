@@ -3,17 +3,18 @@ module github.com/perlsaiyan/zif
 go 1.22.1
 
 require (
+	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.9.1
 	github.com/davecgh/go-spew v1.1.1
 	github.com/evertras/bubble-table v0.15.7
+	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/mistakenelf/teacup v0.4.1
 	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
-	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81 // indirect

@@ -13,6 +13,7 @@ import (
 type SessionHandler struct {
 	Active   string
 	Sessions map[string]*Session
+	Plugins  *PluginRegistry
 	Sub      chan tea.Msg
 }
 
@@ -23,6 +24,7 @@ type Session struct {
 	Context      context.Context
 	Cancel       context.CancelFunc
 	Content      string
+	Ringlog      RingLog
 	Address      string
 	Socket       net.Conn
 	MSDP         *kallisti.MSDPHandler
@@ -34,7 +36,6 @@ type Session struct {
 
 	// Various Registries
 	Tickers *TickerRegistry
-	Plugins *PluginRegistry
 	Actions *ActionRegistry
 	Events  *EventRegistry
 }
@@ -72,6 +73,7 @@ func NewHandler() SessionHandler {
 	sh := SessionHandler{
 		Active:   "zif",
 		Sessions: make(map[string]*Session),
+		Plugins:  NewPluginRegistry(),
 		Sub:      sub,
 	}
 	sh.Sessions["zif"] = &s
@@ -87,6 +89,7 @@ func (s *SessionHandler) AddSession(name string, address string) {
 		Sub:     s.Sub,
 		Actions: NewActionRegistry(),
 		Events:  NewEventRegistry(),
+		Ringlog: NewRingLog(),
 	}
 
 	s.Sessions[name] = &new
@@ -124,4 +127,20 @@ func Motd() string {
 		"\x1b[38;2;165;80;223m" + " ░▒▓█▓▒░      ░▒▓█▓▒░▒▓█▓▒░\n" +
 		"\x1b[38;2;165;80;223m" + " ░▒▓████████▓▒░▒▓█▓▒░▒▓█▓▒░\n\n" +
 		" Zero Insertion Force Mud Client\n\n"
+}
+
+func (h SessionHandler) PluginMOTD() string {
+	msg := ""
+
+	for _, p := range h.Plugins.Plugins {
+		f, err := p.Plugin.Lookup("MOTD")
+		if err != nil {
+			log.Printf("MOTD() lookup failure on plugin %s", p.Name)
+			continue
+		}
+
+		msg += f.(func() string)()
+
+	}
+	return msg
 }
