@@ -3,6 +3,7 @@ package session
 import (
 	"database/sql"
 	"log"
+	"strconv"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -44,7 +45,7 @@ func (s Session) AddRinglogEntry(ts int64, line string, stripped string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	stmt, err := tx.Prepare("insert or replace into ring_log(ring_number, epoch_ns, message, stripped) values(?, ?,?,?)")
+	stmt, err := tx.Prepare("insert or replace into ring_log(ring_number, epoch_ns, message, stripped) values(?,?,?,?)")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -74,4 +75,22 @@ func (r RingLog) GetCurrentRingNumber() int {
 	}
 
 	return id
+}
+
+func CmdRingtest(s *Session, cmd string, h *SessionHandler) {
+	log.Printf("Tried to get record %s", cmd)
+	stmt, err := s.Ringlog.Db.Prepare("select stripped from ring_log where ring_number = ?")
+	if err != nil {
+
+		log.Fatal(err)
+	}
+	defer stmt.Close()
+	var line string
+	id, _ := strconv.Atoi(cmd)
+	err = stmt.QueryRow(id).Scan(&line)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	s.Output("Record: " + line + "\n")
 }
