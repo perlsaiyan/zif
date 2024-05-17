@@ -2,3 +2,4 @@ conf.yaml
 debug.log
 *.so
 zif
+zif.exe
