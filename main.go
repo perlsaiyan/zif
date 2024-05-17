@@ -129,6 +129,12 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.StatusBar.ThirdColumn = fmt.Sprintf("%d/1000", m.Viewport.TotalLineCount())
 
 		jump := m.Viewport.AtBottom()
+		if jump {
+			lines := strings.Split(m.SessionHandler.ActiveSession().Content, "\n")
+			if len(lines) > 1000 {
+				m.SessionHandler.ActiveSession().Content = strings.Join(lines[len(lines)-1000:], "\n")
+			}
+		}
 		m.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
 		if jump {
 			m.Viewport.GotoBottom()
