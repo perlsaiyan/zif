@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
 
+	"github.com/acarl005/stripansi"
 	tea "github.com/charmbracelet/bubbletea"
 	kallisti "github.com/perlsaiyan/zif/protocol"
 )
@@ -37,9 +39,12 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 		if timeout {
 			// we timed out without reading anything
 			if len(outbuf) > 0 {
+				linestring := string(outbuf)
+				strippedlinestring := stripansi.Strip(linestring)
+				s.AddRinglogEntry(time.Now().UnixNano(), linestring, strippedlinestring)
 				s.ActionParser(outbuf)
-				s.Content += string(outbuf)
-				sub <- UpdateMessage{Session: s.Name, Content: string(outbuf)}
+				s.Content += linestring
+				sub <- UpdateMessage{Session: s.Name, Content: linestring}
 				outbuf = outbuf[:0]
 			}
 		} else if buffer[0] == 255 {
@@ -132,9 +137,12 @@ func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
 			}
 		} else if buffer[0] == 10 {
 			// newline, print big buf and go
-			//triggers(m, string(outbuf))
+			linestring := strings.TrimRight(string(outbuf), "\r\n")
+			strippedlinestring := stripansi.Strip(linestring)
+			s.AddRinglogEntry(time.Now().UnixNano(), linestring, strippedlinestring)
 			s.ActionParser(outbuf)
-			s.Content += string(outbuf) + "\n"
+
+			s.Content += linestring + "\n"
 			sub <- UpdateMessage{Session: s.Name, Content: string(outbuf) + "\n"}
 			outbuf = outbuf[:0]
 		} else {

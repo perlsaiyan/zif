@@ -305,12 +305,24 @@ func main() {
 
 	if *kallistiFlag {
 
-		_, err := plugin.Open("./kallisti.so")
+		p, err := plugin.Open("./kallisti.so")
 		if err != nil {
 			fmt.Printf("Error locating kallisti plugin: %s.\n", err.Error())
 			os.Exit(1)
 		}
+		v, err := p.Lookup("Info")
+		var version string
+		if err != nil {
+			version = v.(session.PluginInfo).Version
+		} else {
+			version = "unknown"
+		}
+		m.SessionHandler.Plugins.Plugins["kallisti"] = session.PluginInfo{Plugin: p, Name: "Kallisti", Version: version, Description: "Legends of Kallisti convenience add-ons"}
 
+	}
+
+	if len(m.SessionHandler.Plugins.Plugins) > 0 {
+		m.SessionHandler.ActiveSession().Output("Installed Plugins:\n" + m.SessionHandler.PluginMOTD() + "\n")
 	}
 
 	m.StatusBar = statusbar.New(statusbar.ColorConfig{

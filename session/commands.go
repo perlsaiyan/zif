@@ -23,6 +23,7 @@ var internalCommands = []Command{
 	{Name: "events", Fn: CmdEvents},
 	{"help", CmdHelp},
 	{Name: "msdp", Fn: CmdMSDP},
+	{Name: "plugins", Fn: CmdPlugins},
 	{Name: "session", Fn: CmdSession},
 	{Name: "sessions", Fn: CmdSessions},
 	{Name: "test", Fn: CmdTestTicker},
