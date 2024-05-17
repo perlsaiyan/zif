@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -89,7 +90,7 @@ func PossibleRoomScanner(s *Session, matches ActionMatches) {
 	//re_room_no_exits, _ := regexp.Compile(`^.* \[ No exits! \]`)
 
 	room := false
-	msg := "Potential Room"
+	msg := fmt.Sprintf("Potential Room at %d", s.Ringlog.GetCurrentRingNumber())
 	if re_room_compass.MatchString(matches.Line) {
 		room = true
 		msg += " with compass"
