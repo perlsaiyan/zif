@@ -46,7 +46,6 @@ func (m ZifModel) Init() tea.Cmd {
 }
 
 func (m ZifModel) View() string {
-	log.Printf("rendering %s, and ready = %s\n", m.Name, m.ready)
 	if !m.ready {
 		return "Initializing..."
 	}
