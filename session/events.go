@@ -1,6 +1,8 @@
 package session
 
 import (
+	"sync"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
 )
@@ -18,30 +20,36 @@ type Event struct {
 }
 
 type EventRegistry struct {
-	Events map[string]Event
+	Events map[string][]Event
+	mu     sync.Mutex
 }
 
 func NewEventRegistry() *EventRegistry {
-	er := EventRegistry{Events: make(map[string]Event)}
+
+	er := EventRegistry{Events: make(map[string][]Event)}
 	return &er
 }
 
-func makeEventRow(evt Event) table.Row {
+func makeEventRow(e string, evt Event) table.Row {
 
 	return table.NewRow(table.RowData{
+		"event":   e,
 		"name":    evt.Name,
 		"enabled": evt.Enabled,
 		"count":   evt.Count,
 	})
 }
 
-func CmdEvents(s *Session, cmd string, h *SessionHandler) {
+func CmdEvents(s *Session, cmd string) {
 	var rows []table.Row
-	for _, i := range s.Events.Events {
-		rows = append(rows, makeEventRow(i))
+	for e, i := range s.Events.Events {
+		for _, j := range i {
+			rows = append(rows, makeEventRow(e, j))
+		}
 	}
 
 	t := table.New([]table.Column{
+		table.NewColumn("event", "Event", 15).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
 		table.NewColumn("name", "Name", 25).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
 		table.NewColumn("enabled", "Enabled", 10).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
 		table.NewColumn("count", "Count", 20).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center).Foreground(lipgloss.Color("#8c8"))),
@@ -50,4 +58,12 @@ func CmdEvents(s *Session, cmd string, h *SessionHandler) {
 		BorderRounded()
 
 	s.Output(t.View() + "\n")
+}
+
+func (s *Session) AddEvent(hook string, evt Event) {
+
+	s.Events.mu.Lock()
+	defer s.Events.mu.Unlock()
+
+	s.Events.Events[evt.Name] = append(s.Events.Events[evt.Name], evt)
 }

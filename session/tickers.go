@@ -63,7 +63,7 @@ func makeTickerRow(name string, last time.Time, next time.Time) table.Row {
 	})
 }
 
-func CmdTickers(s *Session, cmd string, h *SessionHandler) {
+func CmdTickers(s *Session, cmd string) {
 	var rows []table.Row
 	for _, i := range s.Tickers.Entries {
 		rows = append(rows, makeTickerRow(i.Name, i.LastFire, i.NextFire))
@@ -81,13 +81,13 @@ func CmdTickers(s *Session, cmd string, h *SessionHandler) {
 }
 
 // test context cancel
-func CmdCancelTicker(s *Session, cmd string, h *SessionHandler) {
+func CmdCancelTicker(s *Session, cmd string) {
 	if s.Cancel != nil {
 		s.Cancel()
 	}
 }
 
-func CmdTestTicker(s *Session, cmd string, h *SessionHandler) {
+func CmdTestTicker(s *Session, cmd string) {
 	s.Tickers.Entries["test1"] = TickerRecord{
 		Name:     "test1",
 		Interval: 5000,

@@ -13,8 +13,8 @@ import (
 )
 
 // Read from the MUD stream, parse MSDP, etc
-func (s *Session) mudReader(sub chan tea.Msg) tea.Cmd {
-
+func (s *Session) mudReader() tea.Cmd {
+	sub := s.Sub
 	buffer := make([]byte, 1)
 	var outbuf []byte
 

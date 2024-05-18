@@ -39,7 +39,6 @@ func (s Session) AddRinglogEntry(ts int64, line string, stripped string) {
 	// mod 10k so we ring the log
 	// TODO: we could make this adjustable
 	id := (s.Ringlog.GetCurrentRingNumber() + 1) % 10000
-	//log.Printf("Inserting row %d at %d", id, ts)
 
 	tx, err := s.Ringlog.Db.Begin()
 	if err != nil {
@@ -77,7 +76,7 @@ func (r RingLog) GetCurrentRingNumber() int {
 	return id
 }
 
-func CmdRingtest(s *Session, cmd string, h *SessionHandler) {
+func CmdRingtest(s *Session, cmd string) {
 	log.Printf("Tried to get record %s", cmd)
 	stmt, err := s.Ringlog.Db.Prepare("select stripped from ring_log where ring_number = ?")
 	if err != nil {
