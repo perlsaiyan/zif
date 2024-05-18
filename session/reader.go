@@ -52,9 +52,9 @@ func (s *Session) mudReader() tea.Cmd {
 			_, _ = s.Socket.Read(buffer) // read one char for now to eat GA
 			if buffer[0] == 249 {        //this is GO AHEAD
 				//log.Println("Got GA")
-				s.Content += string(outbuf) + "\n"
+				s.Content += "PROMPT: " + string(outbuf) + "\n"
 				sub <- UpdateMessage{Session: s.Name, Content: string(outbuf) + "\n"}
-				//triggers(m, string(outbuf))
+				s.ActionParser(outbuf)
 				outbuf = outbuf[:0]
 			} else if buffer[0] == 251 { // WILL
 				_, _ = s.Socket.Read(buffer)
