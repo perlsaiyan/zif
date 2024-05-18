@@ -11,7 +11,8 @@ import (
 	"github.com/evertras/bubble-table/table"
 )
 
-type CommandFunction func(*Session, string, *SessionHandler)
+type CommandFunction func(*Session, string)
+
 type Command struct {
 	Name string
 	Fn   CommandFunction
@@ -41,12 +42,12 @@ var internalCommandHelp = map[string]string{
 	"tickers":  "Show tickers",
 }
 
-func CmdMSDP(s *Session, cmd string, h *SessionHandler) {
+func CmdMSDP(s *Session, cmd string) {
 	buf := fmt.Sprintf("PC in Room: %v, PC in Zone: %v\nRoom: %s\n", s.MSDP.PCInRoom, s.MSDP.PCInZone, s.MSDP.RoomName)
 	s.Output(buf)
 }
 
-func CmdTest(s *Session, cmd string, h *SessionHandler) {
+func CmdTest(s *Session, cmd string) {
 	r := csv.NewReader(strings.NewReader(cmd))
 	r.Comma = ' '
 	r.LazyQuotes = true
@@ -60,7 +61,8 @@ func CmdTest(s *Session, cmd string, h *SessionHandler) {
 	s.Output(msg)
 }
 
-func CmdSession(s *Session, cmd string, h *SessionHandler) {
+func CmdSession(s *Session, cmd string) {
+	h := s.Handler
 	fields := strings.Fields(cmd)
 	if len(fields) < 1 {
 		s.Output("Usage: #session <name> <address:port>" + "\n")
@@ -83,7 +85,7 @@ func CmdSession(s *Session, cmd string, h *SessionHandler) {
 	}
 
 }
-func CmdHelp(s *Session, cmd string, h *SessionHandler) {
+func CmdHelp(s *Session, cmd string) {
 	msg := "Commands:\n"
 	for k, v := range internalCommandHelp {
 		msg += fmt.Sprintf("%15s - %s\n", k, v)
@@ -100,7 +102,8 @@ func makeRow(name string, address string, start time.Time) table.Row {
 	})
 }
 
-func CmdSessions(s *Session, cmd string, h *SessionHandler) {
+func CmdSessions(s *Session, cmd string) {
+	h := s.Handler
 	var rows []table.Row
 	for i := range h.Sessions {
 		if h.Sessions[i].Name == h.ActiveSession().Name {
@@ -121,37 +124,36 @@ func CmdSessions(s *Session, cmd string, h *SessionHandler) {
 	s.Output(t.View() + "\n")
 }
 
-func (h *SessionHandler) ParseInternalCommand(cmd string) {
-	h.ActiveSession().Content += cmd + "\n"
+func (s *Session) ParseInternalCommand(cmd string) {
+	s.Content += cmd + "\n"
 	parsed := strings.Fields(cmd[1:])
 	args := strings.SplitN(cmd, " ", 2)
 
 	for lookup := range internalCommands {
 		if strings.HasPrefix(internalCommands[lookup].Name, strings.ToLower(parsed[0])) {
 			if len(args) < 2 {
-				internalCommands[lookup].Fn(h.ActiveSession(), "", h)
-				h.Sub <- UpdateMessage{Session: h.ActiveSession().Name}
+				internalCommands[lookup].Fn(s, "")
+				s.Sub <- UpdateMessage{Session: s.Name}
 				return
 			} else {
-				internalCommands[lookup].Fn(h.ActiveSession(), args[1], h)
-				h.Sub <- UpdateMessage{Session: h.ActiveSession().Name}
+				internalCommands[lookup].Fn(s, args[1])
+				s.Sub <- UpdateMessage{Session: s.Name}
 				return
 			}
 		}
 	}
-	h.Sub <- UpdateMessage{Session: h.ActiveSession().Name}
+	s.Sub <- UpdateMessage{Session: s.Name}
 }
 
-// TODO: Probably should have this as a Session method, not SessionHandler
-func (m *SessionHandler) ParseCommand(cmd string) {
-	if !m.ActiveSession().PasswordMode {
-		m.ActiveSession().Content += cmd + "\n"
+func (s *Session) ParseCommand(cmd string) {
+	if !s.PasswordMode {
+		s.Content += cmd + "\n"
 	}
 
 	// TODO: We'll want to check this for aliases and/or variables
-	if m.ActiveSession().Connected {
-		m.ActiveSession().Socket.Write([]byte(cmd + "\n"))
+	if s.Connected {
+		s.Socket.Write([]byte(cmd + "\n"))
 	}
 
-	m.Sub <- UpdateMessage{Session: m.ActiveSession().Name}
+	s.Sub <- UpdateMessage{Session: s.Name}
 }

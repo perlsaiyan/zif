@@ -103,7 +103,9 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case session.SessionChangeMsg:
-		log.Printf("Setting active session to %s", msg.ActiveSession.Name)
+		log.Printf("Setting active session to %s (test: %s)", msg.ActiveSession.Name, m.SessionHandler.Active)
+		m.SessionHandler.Active = msg.ActiveSession.Name
+
 		m.StatusBar.FirstColumn = m.SessionHandler.Active
 		if m.SessionHandler.ActiveSession().Connected {
 			m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().Address
@@ -126,7 +128,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.StatusBar.SecondColumn = "Not Connected"
 		}
-		m.StatusBar.ThirdColumn = fmt.Sprintf("%d/1000", m.Viewport.TotalLineCount())
+		m.StatusBar.ThirdColumn = fmt.Sprintf("%d/%d", m.Viewport.TotalLineCount())
 
 		jump := m.Viewport.AtBottom()
 		if jump {
@@ -178,7 +180,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if k := msg.String(); k == "enter" {
 			m.Input.Placeholder = ""
 			order := strings.TrimSpace(m.Input.Value())
-			m.SessionHandler.HandleInput(order)
+			m.SessionHandler.ActiveSession().HandleInput(order)
 			m.Input.SetValue("")
 		} else {
 			var inputcmd tea.Cmd

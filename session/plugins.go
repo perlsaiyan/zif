@@ -19,25 +19,24 @@ type PluginInfo struct {
 	Description string
 }
 
+// LoadPlugin loads a plugin from the given path.
 func LoadPlugin(path string, config *config.Config) (*plugin.Plugin, error) {
-
-	// In order to load a plugin, do something like this:
-
-	plugin, err := plugin.Open(path)
+	plug, err := plugin.Open(path)
 	if err != nil {
 		return nil, err
 	}
-
-	return plugin, nil
+	return plug, nil
 }
 
+// NewPluginRegistry creates and initializes a new PluginRegistry.
 func NewPluginRegistry() *PluginRegistry {
-	pr := PluginRegistry{Plugins: make(map[string]PluginInfo)}
-	return &pr
+	return &PluginRegistry{
+		Plugins: make(map[string]PluginInfo),
+	}
 }
 
+// makePluginRow creates a table row for the given PluginInfo.
 func makePluginRow(p PluginInfo) table.Row {
-
 	return table.NewRow(table.RowData{
 		"name":        p.Name,
 		"version":     p.Version,
@@ -45,10 +44,12 @@ func makePluginRow(p PluginInfo) table.Row {
 	})
 }
 
-func CmdPlugins(s *Session, cmd string, h *SessionHandler) {
+// CmdPlugins generates a table view of all loaded plugins and outputs it to the session.
+func CmdPlugins(s *Session, cmd string) {
+	h := s.Handler
 	var rows []table.Row
-	for _, i := range h.Plugins.Plugins {
-		rows = append(rows, makePluginRow(i))
+	for _, pluginInfo := range h.Plugins.Plugins {
+		rows = append(rows, makePluginRow(pluginInfo))
 	}
 
 	t := table.New([]table.Column{

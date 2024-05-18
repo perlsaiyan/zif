@@ -66,7 +66,7 @@ func makeActionsRow(action Action) table.Row {
 	})
 }
 
-func CmdActions(s *Session, cmd string, h *SessionHandler) {
+func CmdActions(s *Session, cmd string) {
 	var rows []table.Row
 	for _, i := range s.Actions.Actions {
 		rows = append(rows, makeActionsRow(i))

@@ -18,8 +18,8 @@ type SessionHandler struct {
 }
 
 type Session struct {
-	Name string
-
+	Name         string
+	Handler      *SessionHandler
 	Birth        time.Time
 	Context      context.Context
 	Cancel       context.CancelFunc
@@ -31,42 +31,40 @@ type Session struct {
 	TTCount      int
 	PasswordMode bool
 	Connected    bool
-
-	Sub chan tea.Msg
-
-	// Various Registries
-	Tickers *TickerRegistry
-	Actions *ActionRegistry
-	Events  *EventRegistry
+	Sub          chan tea.Msg
+	Tickers      *TickerRegistry
+	Actions      *ActionRegistry
+	Events       *EventRegistry
 }
 
-func (s *SessionHandler) HandleInput(cmd string) {
-	if len(cmd) > 0 {
-		if cmd[0] == '#' {
-			s.ParseInternalCommand(cmd)
+// HandleInput processes the input command.
+func (s *Session) HandleInput(cmd string) {
+	if cmd == "" {
+		if s.Connected {
+			s.Socket.Write([]byte("\n"))
+		}
+		return
+	}
 
-		} else {
-			s.ParseCommand(cmd + "\n")
-		}
+	if cmd[0] == '#' {
+		s.ParseInternalCommand(cmd)
 	} else {
-		// Just press enter
-		if s.ActiveSession().Connected {
-			s.ActiveSession().Socket.Write([]byte("\n"))
-		}
+		s.ParseCommand(cmd + "\n")
 	}
 }
 
-func (s SessionHandler) ActiveSession() *Session {
+// ActiveSession returns the currently active session.
+func (s *SessionHandler) ActiveSession() *Session {
 	return s.Sessions[s.Active]
 }
 
+// NewHandler creates and initializes a new SessionHandler.
 func NewHandler() SessionHandler {
 	sub := make(chan tea.Msg, 50)
 	s := Session{
 		Name:    "zif",
 		Content: Motd(),
 		MSDP:    kallisti.NewMSDP(),
-		Socket:  nil,
 		Sub:     sub,
 		Birth:   time.Now(),
 	}
@@ -76,13 +74,14 @@ func NewHandler() SessionHandler {
 		Plugins:  NewPluginRegistry(),
 		Sub:      sub,
 	}
+	s.Handler = &sh
 	sh.Sessions["zif"] = &s
-	//sh.Sub <- UpdateMessage{Session: "zif"}
 	return sh
 }
 
-func (s *SessionHandler) AddSession(name string, address string) {
-	new := Session{
+// AddSession adds a new session to the session handler.
+func (s *SessionHandler) AddSession(name, address string) {
+	newSession := &Session{
 		Name:    name,
 		Birth:   time.Now(),
 		MSDP:    kallisti.NewMSDP(),
@@ -90,36 +89,41 @@ func (s *SessionHandler) AddSession(name string, address string) {
 		Actions: NewActionRegistry(),
 		Events:  NewEventRegistry(),
 		Ringlog: NewRingLog(),
+		Handler: s,
 	}
 
-	s.Sessions[name] = &new
+	s.Sessions[name] = newSession
 	ctx := context.Background()
-	new.Context, new.Cancel = context.WithCancel(ctx)
+	newSession.Context, newSession.Cancel = context.WithCancel(ctx)
 
-	if len(address) > 1 {
-		s.ActiveSession().Output("attempt to connect to: " + address + "\n")
-		var err error
-		s.Sessions[name].Address = address
-		s.Sessions[name].Socket, err = net.Dial("tcp", address)
-		if err != nil {
-			log.Printf("Error: %v\n", err)
-			delete(s.Sessions, name)
-			return
-		}
-
-		s.Sessions[name].Connected = true
-		NewTickerRegistry(new.Context, s.Sessions[name])
-
-		//spawn reader, ticker, etc
-		go s.Sessions[name].mudReader(s.Sub)
-
-	} else {
+	if address == "" {
 		s.ActiveSession().Output("created nil session: " + name + "\n")
+		return
 	}
+
+	s.ActiveSession().Output("attempt to connect to: " + address + "\n")
+	s.Active = name
+	s.Sub <- SessionChangeMsg{ActiveSession: s.ActiveSession()}
+
+	var err error
+	newSession.Address = address
+	newSession.Socket, err = net.Dial("tcp", address)
+	if err != nil {
+		log.Printf("Error connecting to %s: %v", address, err)
+		delete(s.Sessions, name)
+		return
+	}
+
+	newSession.Connected = true
+	NewTickerRegistry(newSession.Context, newSession)
+
+	go newSession.mudReader()
 }
 
+// Motd returns the message of the day.
 func Motd() string {
-	return "\n\n\x1b[38;2;165;80;223m" + " ░▒▓████████▓▒░▒▓█▓▒░▒▓████████▓▒░\n" +
+	return "\n\n\x1b[38;2;165;80;223m" +
+		" ░▒▓████████▓▒░▒▓█▓▒░▒▓████████▓▒░\n" +
 		"\x1b[38;2;165;80;223m" + "         ▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░\n" +
 		"\x1b[38;2;165;80;223m" + "      ░▒▓██▓▒░░▒▓█▓▒░▒▓█▓▒░\n" +
 		"\x1b[38;2;165;80;223m" + "    ░▒▓██▓▒░  ░▒▓█▓▒░▒▓██████▓▒░\n" +
@@ -129,18 +133,16 @@ func Motd() string {
 		" Zero Insertion Force Mud Client\n\n"
 }
 
-func (h SessionHandler) PluginMOTD() string {
-	msg := ""
-
+// PluginMOTD returns the message of the day for plugins.
+func (h *SessionHandler) PluginMOTD() string {
+	var msg string
 	for _, p := range h.Plugins.Plugins {
 		f, err := p.Plugin.Lookup("MOTD")
 		if err != nil {
 			log.Printf("MOTD() lookup failure on plugin %s", p.Name)
 			continue
 		}
-
 		msg += f.(func() string)()
-
 	}
 	return msg
 }
