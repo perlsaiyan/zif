@@ -2,12 +2,18 @@ package session
 
 import (
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 
 	"github.com/acarl005/stripansi"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
+)
+
+var (
+	reRoomNoCompass = regexp.MustCompile(`^.* (\[ [ NSWEUD<>v^\|\(\)\[\]]* \] *$)`)
+	reRoomCompass   = regexp.MustCompile(`^.* \|`)
 )
 
 type ActionFunction func(*Session, ActionMatches)
@@ -54,6 +60,9 @@ func (s *Session) AddAction(action Action) {
 }
 
 func (s *Session) RemoveAction(name string) {
+	if _, ok := s.Actions.Actions[name]; !ok {
+		log.Printf("action %s does not exist", name)
+	}
 	delete(s.Actions.Actions, name)
 }
 
@@ -84,18 +93,16 @@ func CmdActions(s *Session, cmd string) {
 }
 
 func PossibleRoomScanner(s *Session, matches ActionMatches) {
-	re_room_no_compass, _ := regexp.Compile(`^.* (\[ [ NSWEUD<>v^\|\(\)\[\]]* \] *$)`)
-	re_room_compass, _ := regexp.Compile(`^.* \|`)
 	//re_room_here, _ := regexp.Compile(`^Here +- `)
 	//re_room_no_exits, _ := regexp.Compile(`^.* \[ No exits! \]`)
 
 	room := false
 	msg := fmt.Sprintf("Potential Room at %d", s.Ringlog.GetCurrentRingNumber())
-	if re_room_compass.MatchString(matches.Line) {
+	if reRoomCompass.MatchString(matches.Line) {
 		room = true
 		msg += " with compass"
 	}
-	if re_room_no_compass.MatchString(matches.Line) {
+	if reRoomNoCompass.MatchString(matches.Line) {
 		room = true
 		msg += " without compass"
 	}
@@ -109,18 +116,26 @@ func (s *Session) ActionParser(line []byte) {
 	striptest := stripansi.Strip(test)
 
 	for _, a := range s.Actions.Actions {
+		var matched bool
+		var matchedText string
 
-		if a.RE.MatchString(test) {
+		if a.Color {
+			matched = a.RE.MatchString(test)
+			matchedText = test
+		} else {
+			matched = a.RE.MatchString(striptest)
+			matchedText = striptest
+		}
+
+		if matched {
 			a.Count += 1
 			s.Actions.Actions[a.Name] = a
 			m := ActionMatches{
 				ANSILine: test,
 				Line:     strings.TrimRight(striptest, "\r\n"),
-				Matches:  a.RE.FindStringSubmatch(test),
+				Matches:  a.RE.FindStringSubmatch(matchedText),
 			}
 			a.Fn(s, m)
 		}
-
 	}
-
 }

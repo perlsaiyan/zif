@@ -9,7 +9,8 @@ import (
 )
 
 type RingLog struct {
-	Db *sql.DB
+	Db            *sql.DB
+	CurrentNumber int
 }
 
 func NewRingLog() RingLog {
@@ -39,6 +40,7 @@ func (s Session) AddRinglogEntry(ts int64, line string, stripped string) {
 	// mod 10k so we ring the log
 	// TODO: we could make this adjustable
 	id := (s.Ringlog.GetCurrentRingNumber() + 1) % 10000
+	s.Ringlog.CurrentNumber = id
 
 	tx, err := s.Ringlog.Db.Begin()
 	if err != nil {
@@ -62,30 +64,39 @@ func (s Session) AddRinglogEntry(ts int64, line string, stripped string) {
 }
 
 func (r RingLog) GetCurrentRingNumber() int {
-	stmt, err := r.Db.Prepare("select ifnull(max(ring_number), 0) from ring_log where epoch_ns = (select max(epoch_ns) from ring_log)")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer stmt.Close()
-	var id int
-	err = stmt.QueryRow().Scan(&id)
-	if err != nil {
-		log.Fatal(err)
-	}
+	if r.CurrentNumber == 0 {
+		stmt, err := r.Db.Prepare("select ring_number from ring_log order by epoch_ns desc limit 1")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer stmt.Close()
+		var id int
+		err = stmt.QueryRow().Scan(&id)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				// no rows, return 0
+				return 0
+			}
+		}
 
-	return id
+		return id
+	}
+	return r.CurrentNumber
 }
 
 func CmdRingtest(s *Session, cmd string) {
-	log.Printf("Tried to get record %s", cmd)
+	id, err := strconv.Atoi(cmd)
+	if err != nil {
+		s.Output("Invalid ring number\n")
+		return
+	}
+
 	stmt, err := s.Ringlog.Db.Prepare("select stripped from ring_log where ring_number = ?")
 	if err != nil {
-
 		log.Fatal(err)
 	}
 	defer stmt.Close()
 	var line string
-	id, _ := strconv.Atoi(cmd)
 	err = stmt.QueryRow(id).Scan(&line)
 	if err != nil {
 		log.Fatal(err)
