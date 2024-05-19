@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -47,7 +48,7 @@ func SessionTicker(s *Session) {
 			for k, v := range s.Tickers.Entries {
 				if v.NextFire.Before(time.Now()) {
 					v.LastFire = time.Now()
-					s.Output("Firing ticker " + v.Name + "\n")
+					log.Printf("Firing ticker " + v.Name + "\n")
 					if v.Fn != nil {
 						v.Fn(s)
 					} else if len(v.Command) > 0 {
