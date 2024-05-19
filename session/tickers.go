@@ -10,20 +10,27 @@ import (
 
 type TickerRegistry struct {
 	Context context.Context
-	Entries map[string]TickerRecord
+	Entries map[string]*TickerRecord
 }
 
 type TickerRecord struct {
-	Name     string
-	Interval int
-	Command  string
-	LastFire time.Time
-	NextFire time.Time
+	Name       string
+	Interval   int
+	Fn         func(*Session)
+	Command    string
+	LastFire   time.Time
+	NextFire   time.Time
+	Count      uint
+	Iterations uint
 }
 
 func NewTickerRegistry(ctx context.Context, s *Session) {
-	s.Tickers = &TickerRegistry{Context: ctx, Entries: make(map[string]TickerRecord)}
+	s.Tickers = &TickerRegistry{Context: ctx, Entries: make(map[string]*TickerRecord)}
 	go SessionTicker(s)
+}
+
+func (s *Session) AddTicker(ticker *TickerRecord) {
+	s.Tickers.Entries[ticker.Name] = ticker
 }
 
 func SessionTicker(s *Session) {
@@ -41,7 +48,11 @@ func SessionTicker(s *Session) {
 				if v.NextFire.Before(time.Now()) {
 					v.LastFire = time.Now()
 					s.Output("Firing ticker " + v.Name + "\n")
-					s.Socket.Write([]byte(v.Command + "\n"))
+					if v.Fn != nil {
+						v.Fn(s)
+					} else if len(v.Command) > 0 {
+						s.Socket.Write([]byte(v.Command + "\n"))
+					}
 					v.NextFire = time.Now().Add(time.Duration(v.Interval) * time.Millisecond)
 					s.Tickers.Entries[k] = v
 				}
@@ -88,7 +99,7 @@ func CmdCancelTicker(s *Session, cmd string) {
 }
 
 func CmdTestTicker(s *Session, cmd string) {
-	s.Tickers.Entries["test1"] = TickerRecord{
+	s.Tickers.Entries["test1"] = &TickerRecord{
 		Name:     "test1",
 		Interval: 5000,
 		Command:  "smile",
