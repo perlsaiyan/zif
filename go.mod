@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.9.1
 	github.com/davecgh/go-spew v1.1.1
 	github.com/evertras/bubble-table v0.15.7
+	github.com/jmoiron/sqlx v1.4.0
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/mistakenelf/teacup v0.4.1
 	gopkg.in/yaml.v2 v2.4.0
