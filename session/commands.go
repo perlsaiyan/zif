@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,8 +43,18 @@ var internalCommandHelp = map[string]string{
 	"tickers":  "Show tickers",
 }
 
+func (s *Session) AddCommand(c Command, help string) {
+	internalCommands = append(internalCommands, c)
+	internalCommandHelp[c.Name] = help
+
+	// sort internal commands alphabetically by Name
+	sort.Slice(internalCommands, func(i, j int) bool {
+		return internalCommands[i].Name < internalCommands[j].Name
+	})
+}
+
 func CmdMSDP(s *Session, cmd string) {
-	buf := fmt.Sprintf("PC in Room: %v, PC in Zone: %v\nRoom: %s\n", s.MSDP.PCInRoom, s.MSDP.PCInZone, s.MSDP.RoomName)
+	buf := fmt.Sprintf("PC in Room: %v, PC in Zone: %v\nRoom: %s (%s)\n", s.MSDP.PCInRoom, s.MSDP.PCInZone, s.MSDP.RoomName, s.MSDP.RoomVnum)
 	s.Output(buf)
 }
 
