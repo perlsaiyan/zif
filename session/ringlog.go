@@ -13,6 +13,14 @@ type RingLog struct {
 	CurrentNumber int
 }
 
+type RingRecord struct {
+	RingNumber int
+	EpochNS    int64
+	Context    string
+	Message    string
+	Stripped   string
+}
+
 func NewRingLog() RingLog {
 
 	db, err := sql.Open("sqlite3", ":memory:")
@@ -84,6 +92,24 @@ func (r RingLog) GetCurrentRingNumber() int {
 	return r.CurrentNumber
 }
 
+func (r RingLog) GetRingEntry(id int) *RingRecord {
+	stmt, err := r.Db.Prepare("select ring_number, epoch_ns, message, stripped from ring_log where ring_number = ?")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer stmt.Close()
+	var record RingRecord
+	err = stmt.QueryRow(id).Scan(&record.RingNumber, &record.EpochNS, &record.Message, &record.Stripped)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		log.Fatal(err)
+	}
+
+	return &record
+}
+
 func CmdRingtest(s *Session, cmd string) {
 	id, err := strconv.Atoi(cmd)
 	if err != nil {
@@ -99,7 +125,8 @@ func CmdRingtest(s *Session, cmd string) {
 	var line string
 	err = stmt.QueryRow(id).Scan(&line)
 	if err != nil {
-		log.Fatal(err)
+		s.Output("No record found\n")
+		return
 	}
 
 	s.Output("Record: " + line + "\n")

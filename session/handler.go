@@ -35,6 +35,7 @@ type Session struct {
 	Tickers      *TickerRegistry
 	Actions      *ActionRegistry
 	Events       *EventRegistry
+	Data         map[string]interface{}
 }
 
 // HandleInput processes the input command.
@@ -82,14 +83,18 @@ func NewHandler() SessionHandler {
 // AddSession adds a new session to the session handler.
 func (s *SessionHandler) AddSession(name, address string) {
 	newSession := &Session{
-		Name:    name,
-		Birth:   time.Now(),
-		MSDP:    kallisti.NewMSDP(),
-		Sub:     s.Sub,
+		Name:  name,
+		Birth: time.Now(),
+		MSDP:  kallisti.NewMSDP(),
+		Sub:   s.Sub,
+
 		Actions: NewActionRegistry(),
 		Events:  NewEventRegistry(),
+
 		Ringlog: NewRingLog(),
 		Handler: s,
+
+		Data: make(map[string]interface{}),
 	}
 
 	s.Sessions[name] = newSession
@@ -116,6 +121,17 @@ func (s *SessionHandler) AddSession(name, address string) {
 
 	newSession.Connected = true
 	NewTickerRegistry(newSession.Context, newSession)
+
+	for _, v := range s.Plugins.Plugins {
+		log.Printf("Activating plugin: %s", v.Name)
+		newSession.Output("Activating plugin: " + v.Name + "\n")
+		f, err := v.Plugin.Lookup("RegisterSession")
+		if err != nil {
+			log.Printf("RegisterSession() lookup failure on plugin %s", v.Name)
+			continue
+		}
+		f.(func(*Session))(newSession)
+	}
 
 	go newSession.mudReader()
 }

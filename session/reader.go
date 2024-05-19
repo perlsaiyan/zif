@@ -51,8 +51,14 @@ func (s *Session) mudReader() tea.Cmd {
 
 			_, _ = s.Socket.Read(buffer) // read one char for now to eat GA
 			if buffer[0] == 249 {        //this is GO AHEAD
-				//log.Println("Got GA")
-				s.Content += "PROMPT: " + string(outbuf) + "\n"
+				//store it, this is likely a prompt
+				linestring := strings.TrimRight(string(outbuf), "\r\n")
+				strippedlinestring := stripansi.Strip(linestring)
+				s.AddRinglogEntry(time.Now().UnixNano(), linestring, strippedlinestring)
+
+				s.Content += string(outbuf) + "\n"
+				s.FireEvent("core.prompt", EventData{})
+
 				sub <- UpdateMessage{Session: s.Name, Content: string(outbuf) + "\n"}
 				s.ActionParser(outbuf)
 				outbuf = outbuf[:0]

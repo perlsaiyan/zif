@@ -65,5 +65,15 @@ func (s *Session) AddEvent(hook string, evt Event) {
 	s.Events.mu.Lock()
 	defer s.Events.mu.Unlock()
 
-	s.Events.Events[evt.Name] = append(s.Events.Events[evt.Name], evt)
+	s.Events.Events[hook] = append(s.Events.Events[hook], evt)
+}
+
+func (s *Session) FireEvent(name string, evt EventData) {
+
+	s.Events.mu.Lock()
+	defer s.Events.mu.Unlock()
+
+	for _, i := range s.Events.Events[name] {
+		i.Fn(s, evt)
+	}
 }

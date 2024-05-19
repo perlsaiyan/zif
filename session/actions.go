@@ -1,7 +1,6 @@
 package session
 
 import (
-	"fmt"
 	"log"
 	"regexp"
 	"strings"
@@ -9,11 +8,6 @@ import (
 	"github.com/acarl005/stripansi"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
-)
-
-var (
-	reRoomNoCompass = regexp.MustCompile(`^.* (\[ [ NSWEUD<>v^\|\(\)\[\]]* \] *$)`)
-	reRoomCompass   = regexp.MustCompile(`^.* \|`)
 )
 
 type ActionFunction func(*Session, ActionMatches)
@@ -41,21 +35,11 @@ type ActionRegistry struct {
 func NewActionRegistry() *ActionRegistry {
 	ar := ActionRegistry{Actions: make(map[string]Action)}
 
-	// TODO: stick an sample action here for now
-	action := Action{
-		Name:    "RoomScanner",
-		Pattern: "\x1b\\[1;35m",
-		Color:   true,
-		Enabled: true,
-		Fn:      PossibleRoomScanner,
-	}
-	action.RE = regexp.MustCompile(action.Pattern)
-	ar.Actions[action.Name] = action
-
 	return &ar
 }
 
 func (s *Session) AddAction(action Action) {
+	action.RE = regexp.MustCompile(action.Pattern)
 	s.Actions.Actions[action.Name] = action
 }
 
@@ -90,25 +74,6 @@ func CmdActions(s *Session, cmd string) {
 		BorderRounded()
 
 	s.Output(t.View() + "\n")
-}
-
-func PossibleRoomScanner(s *Session, matches ActionMatches) {
-	//re_room_here, _ := regexp.Compile(`^Here +- `)
-	//re_room_no_exits, _ := regexp.Compile(`^.* \[ No exits! \]`)
-
-	room := false
-	msg := fmt.Sprintf("Potential Room at %d", s.Ringlog.GetCurrentRingNumber())
-	if reRoomCompass.MatchString(matches.Line) {
-		room = true
-		msg += " with compass"
-	}
-	if reRoomNoCompass.MatchString(matches.Line) {
-		room = true
-		msg += " without compass"
-	}
-	if room {
-		s.Output(msg + "\n")
-	}
 }
 
 func (s *Session) ActionParser(line []byte) {
