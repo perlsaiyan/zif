@@ -16,8 +16,11 @@ type KallistiData struct {
 func RegisterSession(s *session.Session) {
 	s.Output("Kallisti plugin loaded\n")
 	s.Data["kallisti"] = &KallistiData{CurrentRoomRingLogID: -1, LastPrompt: -1}
+
+	// Events
 	s.AddEvent("core.prompt", session.Event{Name: "RoomScanner", Enabled: true, Fn: ParseRoom})
 
+	// Actions
 	s.AddAction(session.Action{
 		Name:    "RoomScanner",
 		Pattern: "\x1b\\[1;35m",
@@ -26,6 +29,13 @@ func RegisterSession(s *session.Session) {
 		Fn:      PossibleRoomScanner,
 	})
 
+	// Tickers
+	s.AddTicker(&session.TickerRecord{
+		Name:       "Autoheal",
+		Interval:   2000,
+		Fn:         Autoheal,
+		Iterations: 0,
+	})
 }
 
 func MOTD() string {
