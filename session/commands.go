@@ -26,6 +26,7 @@ var internalCommands = []Command{
 	{"help", CmdHelp},
 	{Name: "msdp", Fn: CmdMSDP},
 	{Name: "plugins", Fn: CmdPlugins},
+	{Name: "queue", Fn: CmdQueue},
 	{Name: "ringtest", Fn: CmdRingtest},
 	{Name: "session", Fn: CmdSession},
 	{Name: "sessions", Fn: CmdSessions},

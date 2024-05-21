@@ -35,6 +35,7 @@ type Session struct {
 	Tickers      *TickerRegistry
 	Actions      *ActionRegistry
 	Events       *EventRegistry
+	Queue        *QueueRegistry
 	Data         map[string]interface{}
 }
 
@@ -90,12 +91,15 @@ func (s *SessionHandler) AddSession(name, address string) {
 
 		Actions: NewActionRegistry(),
 		Events:  NewEventRegistry(),
+		Queue:   NewQueueRegistry(),
 
 		Ringlog: NewRingLog(),
 		Handler: s,
 
 		Data: make(map[string]interface{}),
 	}
+
+	// Initialize the priority Queue
 
 	s.Sessions[name] = newSession
 	ctx := context.Background()

@@ -39,6 +39,12 @@ func RegisterSession(s *session.Session) {
 		Fn:         Autoheal,
 		Iterations: 0,
 	})
+	s.AddTicker(&session.TickerRecord{
+		Name:       "Autobuf",
+		Interval:   2000,
+		Fn:         Autoheal,
+		Iterations: 0,
+	})
 
 	// Commands
 
@@ -46,6 +52,23 @@ func RegisterSession(s *session.Session) {
 
 	// Connect to our world.db
 	d.Atlas = ConnectAtlasDB()
+
+	// some junk
+	q := &session.QueueItem{Priority: 1, Name: "prio1", Command: "prio1"}
+	s.Queue.Add(q)
+
+	q = &session.QueueItem{Priority: 6, Name: "prio6", Command: "prio6"}
+	s.Queue.Add(q)
+
+	q = &session.QueueItem{Priority: 3, Name: "prio3", Command: "prio3"}
+	s.Queue.Add(q)
+
+	q = &session.QueueItem{Priority: 4, Name: "prio4", Command: "prio4"}
+	s.Queue.Add(q)
+
+	q = &session.QueueItem{Priority: 2, Name: "prio2", Command: "prio2"}
+	s.Queue.Add(q)
+
 }
 
 func MOTD() string {
