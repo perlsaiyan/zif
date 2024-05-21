@@ -9,12 +9,24 @@ import (
 )
 
 type AtlasRoomRecord struct {
-	VNUM     string `db:"vnum"`
-	Name     string `db:"name"`
-	Terrain  string `db:"terrain_name"`
-	AreaName string `db:"area_name"`
-	RegenHP  bool   `db:"regen_hp"`
-	//,regen_mp,regen_sp,set_recall,peaceful,deathtrap,silent,wild_magic,bank,narrow,no_magic,no_recall, last_visited, last_harvested
+	VNUM          string  `db:"vnum"`
+	Name          string  `db:"name"`
+	Terrain       string  `db:"terrain_name"`
+	AreaName      string  `db:"area_name"`
+	RegenHP       bool    `db:"regen_hp"`
+	RegenMP       bool    `db:"regen_mp"`
+	RegenSP       bool    `db:"regen_sp"`
+	SetRecall     bool    `db:"set_recall"`
+	Peaceful      bool    `db:"peaceful"`
+	Deathtrap     bool    `db:"deathtrap"`
+	Silent        bool    `db:"silent"`
+	WildMagic     bool    `db:"wild_magic"`
+	Bank          bool    `db:"bank"`
+	Narrow        bool    `db:"narrow"`
+	NoMagic       bool    `db:"no_magic"`
+	NoRecall      bool    `db:"no_recall"`
+	LastVisited   *string `db:"last_visited"`
+	LastHarvested *string `db:"last_harvested"`
 }
 
 func ConnectAtlasDB() *sqlx.DB {
@@ -27,7 +39,7 @@ func ConnectAtlasDB() *sqlx.DB {
 
 func GetRoomByVNUM(s *session.Session, vnum string) (*AtlasRoomRecord, error) {
 	d := s.Data["kallisti"].(*KallistiData)
-	query := "SELECT vnum, name, terrain_name, area_name, regen_hp FROM rooms WHERE vnum = ?"
+	query := "SELECT * FROM rooms WHERE vnum = ?"
 	var room AtlasRoomRecord
 	err := d.Atlas.Get(&room, query, vnum)
 	if err != nil {
