@@ -12,13 +12,22 @@ type KallistiData struct {
 	CurrentRoomRingLogID int
 	LastPrompt           int
 	Atlas                *sqlx.DB
+	World                map[string]AtlasRoomRecord
 }
 
 // RegisterSession is called when a Session activates the plugin
 func RegisterSession(s *session.Session) {
 	s.Output("Kallisti plugin loaded\n")
-	s.Data["kallisti"] = &KallistiData{CurrentRoomRingLogID: -1, LastPrompt: -1}
+	s.Data["kallisti"] = &KallistiData{CurrentRoomRingLogID: -1,
+		LastPrompt: -1,
+		World:      make(map[string]AtlasRoomRecord),
+	}
 	d := s.Data["kallisti"].(*KallistiData)
+
+	// Connect to our world.db
+	d.Atlas = ConnectAtlasDB()
+	LoadAllRooms(s)
+	LoadAllExits(s)
 
 	// Events
 	s.AddEvent("core.prompt", session.Event{Name: "RoomScanner", Enabled: true, Fn: ParseRoom})
@@ -49,26 +58,7 @@ func RegisterSession(s *session.Session) {
 	// Commands
 
 	s.AddCommand(session.Command{Name: "room", Fn: CmdRoom}, "Show room information")
-
-	// Connect to our world.db
-	d.Atlas = ConnectAtlasDB()
-
-	// some junk
-	q := &session.QueueItem{Priority: 1, Name: "prio1", Command: "prio1"}
-	s.Queue.Add(q)
-
-	q = &session.QueueItem{Priority: 6, Name: "prio6", Command: "prio6"}
-	s.Queue.Add(q)
-
-	q = &session.QueueItem{Priority: 3, Name: "prio3", Command: "prio3"}
-	s.Queue.Add(q)
-
-	q = &session.QueueItem{Priority: 4, Name: "prio4", Command: "prio4"}
-	s.Queue.Add(q)
-
-	q = &session.QueueItem{Priority: 2, Name: "prio2", Command: "prio2"}
-	s.Queue.Add(q)
-
+	s.AddCommand(session.Command{Name: "path", Fn: CmdBFSRoomToRoom}, "Find a path between two rooms")
 }
 
 func MOTD() string {
