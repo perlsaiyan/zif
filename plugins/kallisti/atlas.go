@@ -117,7 +117,7 @@ func CmdRoom(s *session.Session, args string) {
 func CmdBFSRoomToRoom(s *session.Session, msg string) {
 	args := strings.Split(msg, " ")
 	if len(args) < 2 {
-		s.Output("Usage: bfs <from vnum> <to vnum>\n")
+		s.Output("Usage: #path <from vnum> <to vnum>\n")
 		return
 	}
 
@@ -160,7 +160,7 @@ func CmdBFSRoomToRoom(s *session.Session, msg string) {
 			}
 
 			buf := fmt.Sprintf("Path from %s to %s: %v\n", fromRoom.VNUM, toRoom.VNUM, pathVNUMs)
-			buf += fmt.Sprintf("\nDirections: %v", pathDirections)
+			buf += fmt.Sprintf("Directions: %v", pathDirections)
 			s.Output(buf)
 			return
 		}
@@ -181,5 +181,6 @@ func CmdBFSRoomToRoom(s *session.Session, msg string) {
 	}
 
 	// No path found
-	log.Printf("No path found from %s to %s", fromRoom.VNUM, toRoom.VNUM)
+	buf := fmt.Sprintf("No path found from %s to %s\n", fromRoom.VNUM, toRoom.VNUM)
+	s.Output(buf)
 }
