@@ -13,6 +13,14 @@ type KallistiData struct {
 	LastPrompt           int
 	Atlas                *sqlx.DB
 	World                map[string]AtlasRoomRecord
+	Travel               KallistiTravel
+}
+
+type KallistiTravel struct {
+	On       bool
+	To       string
+	Distance int
+	Length   int
 }
 
 // RegisterSession is called when a Session activates the plugin
