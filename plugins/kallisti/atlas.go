@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
-	"strings"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/jmoiron/sqlx"
 	"github.com/perlsaiyan/zif/session"
 )
@@ -114,41 +114,29 @@ func CmdRoom(s *session.Session, args string) {
 	s.Output(msg)
 }
 
-func CmdBFSRoomToRoom(s *session.Session, msg string) {
-	args := strings.Split(msg, " ")
-	if len(args) < 2 {
-		s.Output("Usage: #path <from vnum> <to vnum>\n")
-		return
-	}
-
-	fromRoom := GetRoomByVNUM(s, args[0])
+func FindPathBFS(s *session.Session, fromVnum string, toVnum string) ([]string, []string) {
+	fromRoom := GetRoomByVNUM(s, fromVnum)
 	if fromRoom == nil {
-		log.Printf("VNUM not in atlas: %s", args[0])
-		s.Output("VNUM not in atlas.\n")
-		return
+		log.Printf("VNUM not in atlas: %s", fromVnum)
+		return nil, nil
 	}
-
-	toRoom := GetRoomByVNUM(s, args[1])
+	toRoom := GetRoomByVNUM(s, toVnum)
 	if toRoom == nil {
-		log.Printf("VNUM not in atlas: %s", args[1])
-		s.Output("VNUM not in atlas.\n")
-		return
+		log.Printf("VNUM not in atlas: %s", toVnum)
+		return nil, nil
 	}
 	type Path struct {
 		Room      *AtlasRoomRecord
 		Direction string
 	}
-
 	// Do BFS
 	visited := make(map[string]bool)
 	queue := make([][]*Path, 0)
 	start := []*Path{{Room: fromRoom}}
 	queue = append(queue, start)
-
 	for len(queue) > 0 {
 		path := queue[0]
 		queue = queue[1:]
-
 		currentRoom := path[len(path)-1].Room
 		if currentRoom.VNUM == toRoom.VNUM {
 			// Found the destination room, store the path
@@ -156,18 +144,16 @@ func CmdBFSRoomToRoom(s *session.Session, msg string) {
 			var pathDirections []string
 			for _, step := range path {
 				pathVNUMs = append(pathVNUMs, step.Room.VNUM)
-				pathDirections = append(pathDirections, step.Direction)
+				if step.Room.Exits[step.Direction].Commands == nil {
+					pathDirections = append(pathDirections, step.Direction)
+				} else {
+					pathDirections = append(pathDirections, *step.Room.Exits[step.Direction].Commands)
+				}
 			}
-
-			buf := fmt.Sprintf("Path from %s to %s: %v\n", fromRoom.VNUM, toRoom.VNUM, pathVNUMs)
-			buf += fmt.Sprintf("Directions: %v", pathDirections)
-			s.Output(buf)
-			return
+			return pathVNUMs, pathDirections
 		}
-
 		if !visited[currentRoom.VNUM] {
 			visited[currentRoom.VNUM] = true
-
 			for _, exit := range currentRoom.Exits {
 				nextRoom := GetRoomByVNUM(s, exit.ToVnum)
 				if nextRoom != nil {
@@ -179,8 +165,46 @@ func CmdBFSRoomToRoom(s *session.Session, msg string) {
 			}
 		}
 	}
-
 	// No path found
-	buf := fmt.Sprintf("No path found from %s to %s\n", fromRoom.VNUM, toRoom.VNUM)
-	s.Output(buf)
+	return nil, nil
+}
+
+func CmdBFSRoomToRoom(s *session.Session, arg string) {
+	d := s.Data["kallisti"].(*KallistiData)
+	if len(arg) == 0 {
+		s.Output("Usage: #path <to vnum>\n")
+		return
+	}
+
+	fromVnum := s.MSDP.RoomVnum
+	toVnum := arg
+	pathVNUMs, pathDirections := FindPathBFS(s, fromVnum, toVnum)
+	if pathVNUMs == nil {
+		s.Output(fmt.Sprintf("No path found from %s to %s\n", fromVnum, toVnum))
+		return
+	}
+
+	d.Travel.On = true
+	d.Travel.To = toVnum
+	d.Travel.Length = len(pathVNUMs) - 1 // don't count the room we're in
+	d.Travel.Distance = len(pathVNUMs) - 1
+	// Index 1 is the first direction since we're in room 0?
+	s.Output("Traveling to " + toVnum + ", sending " + pathDirections[1] + "\n")
+	s.Socket.Write([]byte(pathDirections[1] + "\n"))
+
+}
+
+func TravelProgress(s *session.Session) string {
+	d := s.Data["kallisti"].(*KallistiData)
+
+	if !d.Travel.On {
+		return ""
+	}
+
+	prog := progress.New(progress.WithScaledGradient("#FF7CCB", "#FDFF8C"))
+	prog.Width = 20
+	prog.ShowPercentage = false
+
+	log.Printf("returning progress bar of %f", float64(d.Travel.Length-d.Travel.Distance)/float64(d.Travel.Length))
+	return prog.ViewAs(float64(d.Travel.Length-d.Travel.Distance) / float64(d.Travel.Length))
 }
