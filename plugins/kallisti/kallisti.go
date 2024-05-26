@@ -67,6 +67,7 @@ func RegisterSession(s *session.Session) {
 
 	s.AddCommand(session.Command{Name: "room", Fn: CmdRoom}, "Show room information")
 	s.AddCommand(session.Command{Name: "path", Fn: CmdBFSRoomToRoom}, "Find a path between two rooms")
+	s.AddCommand(session.Command{Name: "map", Fn: CmdShowMap}, "Show a map")
 }
 
 func MOTD() string {

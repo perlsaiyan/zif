@@ -31,12 +31,14 @@ var MSDP_FIELDS = map[string]MSDPFieldDefinition{
 	"GROUP":                {"Group", "grouplist"},
 	"REPORTABLE_VARIABLES": {"Reportables", "list"},
 	"ROOM_NAME":            {"RoomName", "string"},
+	"ROOM_TERRAIN":         {"RoomTerrain", "string"},
 	"ROOM_VNUM":            {"RoomVnum", "string"},
 	"ROOM_WEATHER":         {"RoomWeather", "string"},
 	"SERVER_ID":            {"Server_ID", "string"},
 	"SERVER_TIME":          {"ServerTime", "integer"},
 	"SNIPPET_VERSION":      {"SnippetVersion", "string"},
 	"UPTIME":               {"Uptime", "integer"},
+	"WORLD_TIME":           {"WorldTime", "integer"},
 }
 
 type MSDPFieldDefinition struct {
@@ -291,7 +293,7 @@ func (m *MSDPHandler) HandleSB(conn net.Conn, b []byte) {
 
 		// See if we already know about this
 		if val, ok := MSDP_FIELDS[field]; ok {
-			log.Printf("Try to intercept %s", field)
+			//log.Printf("Try to intercept %s", field)
 			switch val.Type {
 			case "string":
 				var tmp string
@@ -300,7 +302,7 @@ func (m *MSDPHandler) HandleSB(conn net.Conn, b []byte) {
 				b = b[1:] // ditch val byte
 				tmp, b = readString(b)
 				f.SetString(tmp)
-				log.Printf("Intercepted value %s, got %s", field, tmp)
+				//log.Printf("Intercepted value %s, got %s", field, tmp)
 				if len(b) == 1 && b[0] == 255 {
 					return
 				} else {
@@ -314,7 +316,7 @@ func (m *MSDPHandler) HandleSB(conn net.Conn, b []byte) {
 				b = b[1:] // ditch val byte
 				tmp, b = readInteger(b)
 				f.SetInt(int64(tmp))
-				log.Printf("Intercepted value %s, got %d", field, tmp)
+				//log.Printf("Intercepted value %s, got %d", field, tmp)
 				if len(b) == 1 && b[0] == 255 {
 					return
 				} else {
@@ -342,7 +344,7 @@ func (m *MSDPHandler) HandleSB(conn net.Conn, b []byte) {
 				for i := range tmp {
 					f.Index(i).SetString(tmp[i])
 				}
-				log.Printf("Intercepted value %s, got %+v", field, tmp)
+				//log.Printf("Intercepted value %s, got %+v", field, tmp)
 
 				// Special case for REPORTABLE_VARIABLES
 				if field == "REPORTABLE_VARIABLES" {
