@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/jmoiron/sqlx"
@@ -204,7 +205,99 @@ func TravelProgress(s *session.Session) string {
 	prog := progress.New(progress.WithScaledGradient("#FF7CCB", "#FDFF8C"))
 	prog.Width = 20
 	prog.ShowPercentage = false
-
-	log.Printf("returning progress bar of %f", float64(d.Travel.Length-d.Travel.Distance)/float64(d.Travel.Length))
 	return prog.ViewAs(float64(d.Travel.Length-d.Travel.Distance) / float64(d.Travel.Length))
+}
+
+func CmdShowMap(s *session.Session, arg string) {
+	mapgrid := GetBFSGrid(s)
+
+	// make a string containing the map
+	var mapString string
+	for _, row := range mapgrid {
+		for _, room := range row {
+			if room != nil {
+				terrains := strings.Split(room.Terrain, " ")
+				t := GetTerrainByName(terrains[0])
+				glyph := GetTerrainMapSymbol(room.Terrain)
+				if room.VNUM == s.MSDP.RoomVnum {
+					t := GetTerrainByName("You")
+					style := GetStyleByTerrain(t)
+					mapString += style.Render("@")
+				} else if t != nil {
+					style := GetStyleByTerrain(t)
+					color := GetTerrainMapColor(room.Terrain)
+					log.Printf("Room VNUM: %s, Terrain: %s, Symbol: %s, Color: %s\n", room.VNUM, room.Terrain, glyph, color)
+					mapString += style.Render(glyph)
+				} else {
+					mapString += ":"
+				}
+			} else {
+				mapString += " "
+			}
+		}
+		mapString += "\n"
+	}
+
+	lines := strings.Split(mapString, "\n")
+	for _, line := range lines {
+		s.Output(line + "\n")
+	}
+}
+
+func GetBFSGrid(s *session.Session) [][]*AtlasRoomRecord {
+	//d := s.Data["kallisti"].(*KallistiData)
+	fromRoom := GetRoomByVNUM(s, s.MSDP.RoomVnum)
+	if fromRoom == nil {
+		log.Printf("VNUM not in atlas: %s", s.MSDP.RoomVnum)
+		return nil
+	}
+
+	width := 50
+	height := 10
+	overscan := 2
+	cenH := height / 2
+	cenW := width / 2
+	matrix := make([][]*AtlasRoomRecord, height+overscan)
+	for i := range matrix {
+		matrix[i] = make([]*AtlasRoomRecord, width+overscan)
+	}
+
+	type MapPoint struct {
+		Room *AtlasRoomRecord
+		X    int
+		Y    int
+	}
+
+	queue := make([]MapPoint, 0)
+	visited := make(map[string]bool)
+	queue = append(queue, MapPoint{Room: fromRoom, X: cenW, Y: cenH})
+	for len(queue) > 0 {
+		here := queue[0]
+		queue = queue[1:]
+		if _, ok := visited[here.Room.VNUM]; ok {
+			continue
+		}
+		visited[here.Room.VNUM] = true
+		if matrix[here.Y][here.X] == nil {
+			matrix[here.Y][here.X] = here.Room
+			for _, exit := range here.Room.Exits {
+				nextRoom := GetRoomByVNUM(s, exit.ToVnum)
+				if nextRoom != nil {
+					if exit.Direction == "north" && here.Y-1 >= 0 {
+						queue = append(queue, MapPoint{Room: nextRoom, X: here.X, Y: here.Y - 1})
+					}
+					if exit.Direction == "south" && here.Y+1 < len(matrix) {
+						queue = append(queue, MapPoint{Room: nextRoom, X: here.X, Y: here.Y + 1})
+					}
+					if exit.Direction == "east" && here.X+1 < len(matrix[here.Y]) {
+						queue = append(queue, MapPoint{Room: nextRoom, X: here.X + 1, Y: here.Y})
+					}
+					if exit.Direction == "west" && here.X-1 >= 0 {
+						queue = append(queue, MapPoint{Room: nextRoom, X: here.X - 1, Y: here.Y})
+					}
+				}
+			}
+		}
+	}
+	return matrix
 }

@@ -55,8 +55,10 @@ func (s *Session) AddCommand(c Command, help string) {
 }
 
 func CmdMSDP(s *Session, cmd string) {
-	buf := fmt.Sprintf("PC in Room: %v, PC in Zone: %v\nRoom: %s (%s)\n", s.MSDP.PCInRoom, s.MSDP.PCInZone, s.MSDP.RoomName, s.MSDP.RoomVnum)
-	s.Output(buf)
+	buf := fmt.Sprintf("PC in Room: %v, PC in Zone: %v\nRoom: %s (%s)\nTerrain: %s\n", s.MSDP.PCInRoom, s.MSDP.PCInZone, s.MSDP.RoomName, s.MSDP.RoomVnum, s.MSDP.RoomTerrain)
+	for _, line := range strings.Split(buf, "\n") {
+		s.Output(line + "\n")
+	}
 }
 
 func CmdTest(s *Session, cmd string) {
