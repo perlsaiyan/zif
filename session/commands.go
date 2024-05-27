@@ -101,10 +101,18 @@ func CmdSession(s *Session, cmd string) {
 }
 func CmdHelp(s *Session, cmd string) {
 	msg := "Commands:\n"
-	for k, v := range internalCommandHelp {
-		msg += fmt.Sprintf("%15s - %s\n", k, v)
+
+	var sortedHelp []string
+	for k := range internalCommandHelp {
+		sortedHelp = append(sortedHelp, k)
 	}
+	sort.Strings(sortedHelp)
 	s.Output(msg)
+	for _, v := range sortedHelp {
+		msg = fmt.Sprintf("%+15s: %-40s\n", v, internalCommandHelp[v])
+		s.Output(msg)
+	}
+
 }
 
 func makeRow(name string, address string, start time.Time) table.Row {
