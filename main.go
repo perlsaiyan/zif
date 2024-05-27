@@ -20,6 +20,8 @@ import (
 )
 
 const useHighPerformanceRenderer = false
+const RightSideBarSize = 50
+const LeftSideBarSize = 50
 
 type ZifModel struct {
 	Name               string
@@ -65,9 +67,9 @@ func (m *ZifModel) ToggleSideBar(side string) {
 	case "left":
 		m.LeftSideBarActive = !m.LeftSideBarActive
 		if m.LeftSideBarActive {
-			m.Viewport.Width -= 25
+			m.Viewport.Width -= LeftSideBarSize
 		} else {
-			m.Viewport.Width += 25
+			m.Viewport.Width += LeftSideBarSize
 		}
 
 	case "right":
@@ -75,9 +77,9 @@ func (m *ZifModel) ToggleSideBar(side string) {
 		m.RightSideBarActive = !m.RightSideBarActive
 
 		if m.RightSideBarActive {
-			m.Viewport.Width -= 25
+			m.Viewport.Width -= RightSideBarSize
 		} else {
-			m.Viewport.Width += 25
+			m.Viewport.Width += RightSideBarSize
 		}
 	}
 }
@@ -152,6 +154,18 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Viewport.GotoBottom()
 		}
 
+		// update map?
+		if m.SessionHandler.ActiveSession().Connected && m.RightSideBarActive {
+			if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
+				tp, err := k.Plugin.Lookup("MakeMap")
+				if err == nil {
+					m.RightSideBar.SetContent(tp.(func(*session.Session, int, int) string)(m.SessionHandler.ActiveSession(), RightSideBarSize, 20))
+				} else {
+					m.RightSideBar.SetContent("Lookup failure")
+				}
+			}
+		}
+
 		cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
 
 	case session.TextinputMsg:
@@ -212,10 +226,10 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// here.
 			width := msg.Width
 			if m.LeftSideBarActive {
-				width -= 25
+				width -= LeftSideBarSize
 			}
 			if m.RightSideBarActive {
-				width -= 25
+				width -= RightSideBarSize
 			}
 
 			m.Viewport = viewport.New(width, msg.Height-verticalMarginHeight)
@@ -224,12 +238,12 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Viewport.SetContent(session.Motd())
 			m.Ready = true
 
-			m.LeftSideBar = viewport.New(25, msg.Height-verticalMarginHeight)
+			m.LeftSideBar = viewport.New(LeftSideBarSize, msg.Height-verticalMarginHeight)
 			m.LeftSideBar.YPosition = 0
 			m.LeftSideBar.HighPerformanceRendering = useHighPerformanceRenderer
 			m.LeftSideBar.SetContent("LEFT")
 
-			m.RightSideBar = viewport.New(25, msg.Height-verticalMarginHeight)
+			m.RightSideBar = viewport.New(RightSideBarSize, msg.Height-verticalMarginHeight)
 			m.RightSideBar.YPosition = 0
 			m.RightSideBar.HighPerformanceRendering = useHighPerformanceRenderer
 			m.RightSideBar.SetContent("RIGHT")
@@ -243,20 +257,29 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			width := msg.Width
 			if m.LeftSideBarActive {
-				width -= 25
+				width -= LeftSideBarSize
 			}
 			if m.RightSideBarActive {
-				width -= 25
+				width -= RightSideBarSize
 			}
 
 			m.Viewport.Width = width
 
 			m.Viewport.Height = msg.Height - verticalMarginHeight
-			m.LeftSideBar.Width = 25
+			m.LeftSideBar.Width = LeftSideBarSize
 			m.LeftSideBar.SetContent("LEFT")
 			m.LeftSideBar.Height = msg.Height - verticalMarginHeight
-			m.RightSideBar.Width = 25
-			m.RightSideBar.SetContent("RIGHT")
+
+			m.RightSideBar.Width = RightSideBarSize
+			if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
+				tp, err := k.Plugin.Lookup("MakeMap")
+				if err == nil {
+					m.RightSideBar.SetContent(tp.(func(*session.Session, int, int) string)(m.SessionHandler.ActiveSession(), RightSideBarSize, 20))
+				} else {
+					m.RightSideBar.SetContent("Lookup failure")
+				}
+			}
+
 			m.RightSideBar.Height = msg.Height - verticalMarginHeight
 
 		}

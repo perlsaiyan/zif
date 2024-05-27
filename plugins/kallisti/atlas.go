@@ -209,7 +209,17 @@ func TravelProgress(s *session.Session) string {
 }
 
 func CmdShowMap(s *session.Session, arg string) {
-	mapgrid := GetBFSGrid(s)
+	// make a string containing the map
+	mapString := MakeMap(s, 50, 25)
+
+	lines := strings.Split(mapString, "\n")
+	for _, line := range lines {
+		s.Output(line + "\n")
+	}
+}
+
+func MakeMap(s *session.Session, x int, y int) string {
+	mapgrid := GetBFSGrid(s, x, y)
 
 	// make a string containing the map
 	var mapString string
@@ -225,8 +235,8 @@ func CmdShowMap(s *session.Session, arg string) {
 					mapString += style.Render("@")
 				} else if t != nil {
 					style := GetStyleByTerrain(t)
-					color := GetTerrainMapColor(room.Terrain)
-					log.Printf("Room VNUM: %s, Terrain: %s, Symbol: %s, Color: %s\n", room.VNUM, room.Terrain, glyph, color)
+					//color := GetTerrainMapColor(room.Terrain)
+					//log.Printf("Room VNUM: %s, Terrain: %s, Symbol: %s, Color: %s\n", room.VNUM, room.Terrain, glyph, color)
 					mapString += style.Render(glyph)
 				} else {
 					mapString += ":"
@@ -238,13 +248,10 @@ func CmdShowMap(s *session.Session, arg string) {
 		mapString += "\n"
 	}
 
-	lines := strings.Split(mapString, "\n")
-	for _, line := range lines {
-		s.Output(line + "\n")
-	}
+	return mapString
 }
 
-func GetBFSGrid(s *session.Session) [][]*AtlasRoomRecord {
+func GetBFSGrid(s *session.Session, x int, y int) [][]*AtlasRoomRecord {
 	//d := s.Data["kallisti"].(*KallistiData)
 	fromRoom := GetRoomByVNUM(s, s.MSDP.RoomVnum)
 	if fromRoom == nil {
@@ -252,9 +259,9 @@ func GetBFSGrid(s *session.Session) [][]*AtlasRoomRecord {
 		return nil
 	}
 
-	width := 50
-	height := 10
-	overscan := 2
+	width := x
+	height := y
+	overscan := 0
 	cenH := height / 2
 	cenW := width / 2
 	matrix := make([][]*AtlasRoomRecord, height+overscan)
