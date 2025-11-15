@@ -122,17 +122,18 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case session.UpdateMessage:
 		m.StatusBar.FirstColumn = m.SessionHandler.Active
 		if m.SessionHandler.ActiveSession().Connected {
-			if len(m.SessionHandler.ActiveSession().MSDP.RoomName) > 0 {
+			roomName := m.SessionHandler.ActiveSession().MSDP.GetString("ROOM_NAME")
+			if len(roomName) > 0 {
 				if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
 					tp, err := k.Plugin.Lookup("TravelProgress")
 					if err == nil {
 						m.StatusBar.SecondColumn = tp.(func(*session.Session) string)(m.SessionHandler.ActiveSession()) +
-							" " + m.SessionHandler.ActiveSession().MSDP.RoomName
+							" " + roomName
 					} else {
-						m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().MSDP.RoomName
+						m.StatusBar.SecondColumn = roomName
 					}
 				} else {
-					m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().MSDP.RoomName
+					m.StatusBar.SecondColumn = roomName
 				}
 			} else {
 				m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().Address

@@ -30,12 +30,12 @@ func ParseRoom(s *session.Session, evt session.EventData) {
 
 	if d.Travel.On {
 		// We're in travel mode, so we need to check if we've arrived
-		if d.Travel.To == s.MSDP.RoomVnum {
+		if d.Travel.To == s.MSDP.GetString("ROOM_VNUM") {
 			s.Output("Arrived at destination!\n")
 			d.Travel.On = false
 		} else {
 			// We're not there yet, so we need to keep moving
-			path, directions := FindPathBFS(s, s.MSDP.RoomVnum, d.Travel.To)
+			path, directions := FindPathBFS(s, s.MSDP.GetString("ROOM_VNUM"), d.Travel.To)
 			if path == nil {
 				s.Output("No path found!\n")
 				d.Travel.On = false

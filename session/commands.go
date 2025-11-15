@@ -54,11 +54,160 @@ func (s *Session) AddCommand(c Command, help string) {
 	})
 }
 
-func CmdMSDP(s *Session, cmd string) {
-	buf := fmt.Sprintf("PC in Room: %v, PC in Zone: %v\nRoom: %s (%s)\nTerrain: %s\n", s.MSDP.PCInRoom, s.MSDP.PCInZone, s.MSDP.RoomName, s.MSDP.RoomVnum, s.MSDP.RoomTerrain)
-	for _, line := range strings.Split(buf, "\n") {
-		s.Output(line + "\n")
+func formatMSDPValue(v interface{}, indent int) string {
+	// Safety: prevent infinite recursion or excessive depth
+	const maxDepth = 10
+	if indent > maxDepth {
+		return "... (max depth exceeded)"
 	}
+	
+	indentStr := strings.Repeat("  ", indent)
+	switch val := v.(type) {
+	case string:
+		return fmt.Sprintf("%q", val)
+	case int:
+		return fmt.Sprintf("%d", val)
+	case bool:
+		return fmt.Sprintf("%v", val)
+	case []interface{}:
+		if len(val) == 0 {
+			return "[]"
+		}
+		// Limit array size to prevent huge output
+		const maxArrayItems = 100
+		displayItems := val
+		truncated := false
+		if len(val) > maxArrayItems {
+			displayItems = val[:maxArrayItems]
+			truncated = true
+		}
+		
+		// For simple arrays of strings/ints, show inline
+		allSimple := true
+		for _, item := range displayItems {
+			switch item.(type) {
+			case string, int, bool:
+				// simple
+			default:
+				allSimple = false
+				break
+			}
+		}
+		if allSimple && len(displayItems) <= 5 {
+			var items []string
+			for _, item := range displayItems {
+				items = append(items, formatMSDPValue(item, 0))
+			}
+			result := "[" + strings.Join(items, ", ") + "]"
+			if truncated {
+				result += fmt.Sprintf(" ... (%d more items)", len(val)-maxArrayItems)
+			}
+			return result
+		}
+		// Complex or long array - format multi-line
+		var lines []string
+		lines = append(lines, "[")
+		for i, item := range displayItems {
+			itemStr := formatMSDPValue(item, indent+1)
+			if i == len(displayItems)-1 {
+				lines = append(lines, fmt.Sprintf("%s  %s", indentStr, itemStr))
+			} else {
+				lines = append(lines, fmt.Sprintf("%s  %s,", indentStr, itemStr))
+			}
+		}
+		if truncated {
+			lines = append(lines, fmt.Sprintf("%s  ... (%d more items)", indentStr, len(val)-maxArrayItems))
+		}
+		lines = append(lines, fmt.Sprintf("%s]", indentStr))
+		return strings.Join(lines, "\n")
+	case map[string]interface{}:
+		if len(val) == 0 {
+			return "{}"
+		}
+		// Limit table size to prevent huge output
+		const maxTableItems = 50
+		keys := make([]string, 0, len(val))
+		for k := range val {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		
+		displayKeys := keys
+		truncated := false
+		if len(keys) > maxTableItems {
+			displayKeys = keys[:maxTableItems]
+			truncated = true
+		}
+		
+		// Always format tables multi-line for readability
+		var lines []string
+		lines = append(lines, "{")
+		for i, k := range displayKeys {
+			itemStr := formatMSDPValue(val[k], indent+1)
+			if i == len(displayKeys)-1 && !truncated {
+				lines = append(lines, fmt.Sprintf("%s  %s: %s", indentStr, k, itemStr))
+			} else {
+				lines = append(lines, fmt.Sprintf("%s  %s: %s,", indentStr, k, itemStr))
+			}
+		}
+		if truncated {
+			lines = append(lines, fmt.Sprintf("%s  ... (%d more keys)", indentStr, len(keys)-maxTableItems))
+		}
+		lines = append(lines, fmt.Sprintf("%s}", indentStr))
+		return strings.Join(lines, "\n")
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+func CmdMSDP(s *Session, cmd string) {
+	log.Printf("CmdMSDP: Starting, data has %d keys", len(s.MSDP.Data))
+	
+	if len(s.MSDP.Data) == 0 {
+		s.Output("No MSDP data available.\n")
+		return
+	}
+
+	// Sort keys for consistent output
+	keys := make([]string, 0, len(s.MSDP.Data))
+	for k := range s.MSDP.Data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	log.Printf("CmdMSDP: Processing %d keys", len(keys))
+	
+	// Build the entire output string first to avoid blocking on channel sends
+	var output strings.Builder
+	output.WriteString("MSDP Values:\n")
+	
+	for i, key := range keys {
+		log.Printf("CmdMSDP: Processing key %d/%d: %s", i+1, len(keys), key)
+		value := s.MSDP.Data[key]
+		
+		log.Printf("CmdMSDP: Formatting value for %s", key)
+		formatted := formatMSDPValue(value, 0)
+		log.Printf("CmdMSDP: Formatted %s, length %d chars", key, len(formatted))
+		
+		// Handle multi-line values by indenting subsequent lines
+		lines := strings.Split(formatted, "\n")
+		if len(lines) == 1 {
+			// Single line value
+			output.WriteString(fmt.Sprintf("  %s: %s\n", key, formatted))
+		} else {
+			// Multi-line value - indent all lines after the first
+			output.WriteString(fmt.Sprintf("  %s: %s\n", key, lines[0]))
+			for _, line := range lines[1:] {
+				output.WriteString(fmt.Sprintf("    %s\n", line))
+			}
+		}
+		log.Printf("CmdMSDP: Finished key %s", key)
+	}
+	
+	log.Printf("CmdMSDP: Completed all keys, sending output (%d bytes)", output.Len())
+	// Send the entire output in one go to avoid blocking
+	s.Output(output.String())
+	log.Printf("CmdMSDP: Output sent")
 }
 
 func CmdTest(s *Session, cmd string) {

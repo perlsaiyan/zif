@@ -187,7 +187,7 @@ func CmdBFSRoomToRoom(s *session.Session, arg string) {
 		return
 	}
 
-	fromVnum := s.MSDP.RoomVnum
+	fromVnum := s.MSDP.GetString("ROOM_VNUM")
 	toVnum := arg
 	pathVNUMs, pathDirections := FindPathBFS(s, fromVnum, toVnum)
 	if pathVNUMs == nil {
@@ -254,7 +254,7 @@ func MakeMap(s *session.Session, x int, y int) string {
 				terrains := strings.Split(room.Terrain, " ")
 				t := GetTerrainByName(terrains[0])
 				glyph := GetTerrainMapSymbol(room.Terrain)
-				if room.VNUM == s.MSDP.RoomVnum {
+				if room.VNUM == s.MSDP.GetString("ROOM_VNUM") {
 					t := GetTerrainByName("You")
 					style := GetStyleByTerrain(t)
 					mapString += style.Render("@")
@@ -278,9 +278,9 @@ func MakeMap(s *session.Session, x int, y int) string {
 
 func GetBFSGrid(s *session.Session, x int, y int) [][]*AtlasRoomRecord {
 	//d := s.Data["kallisti"].(*KallistiData)
-	fromRoom := GetRoomByVNUM(s, s.MSDP.RoomVnum)
+	fromRoom := GetRoomByVNUM(s, s.MSDP.GetString("ROOM_VNUM"))
 	if fromRoom == nil {
-		log.Printf("VNUM not in atlas: %s", s.MSDP.RoomVnum)
+		log.Printf("VNUM not in atlas: %s", s.MSDP.GetString("ROOM_VNUM"))
 		return nil
 	}
 

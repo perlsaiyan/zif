@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"reflect"
 	"strconv"
+
+	"github.com/perlsaiyan/zif/protocol/msdp"
 )
 
 const IAC = byte(255)
@@ -20,158 +21,15 @@ const MSDP_TABLE_CLOSE = byte(4)
 const MSDP_ARRAY_OPEN = byte(5)
 const MSDP_ARRAY_CLOSE = byte(6)
 
-var MSDP_FIELDS = map[string]MSDPFieldDefinition{
-	"ACCOUNT_NAME":         {"AccountName", "string"},
-	"ALIGNMENT":            {"Alignment", "int"},
-	"ANSI_COLORS":          {"AnsiColors", "integer"},
-	"AREA_MINLEVEL":        {"AreaMinLevel", "integer"},
-	"CHARACTER_NAME":       {"CharacterName", "string"},
-	"CLIENT_VERSION":       {"ClientVersion", "string"},
-	"COMMANDS":             {"Commands", "list"},
-	"GROUP":                {"Group", "grouplist"},
-	"REPORTABLE_VARIABLES": {"Reportables", "list"},
-	"ROOM_NAME":            {"RoomName", "string"},
-	"ROOM_TERRAIN":         {"RoomTerrain", "string"},
-	"ROOM_VNUM":            {"RoomVnum", "string"},
-	"ROOM_WEATHER":         {"RoomWeather", "string"},
-	"SERVER_ID":            {"Server_ID", "string"},
-	"SERVER_TIME":          {"ServerTime", "integer"},
-	"SNIPPET_VERSION":      {"SnippetVersion", "string"},
-	"UPTIME":               {"Uptime", "integer"},
-	"WORLD_TIME":           {"WorldTime", "integer"},
-}
-
-type MSDPFieldDefinition struct {
-	Field string
-	Type  string
-}
-
 type MSDPHandler struct {
-	Server_ID          string
-	Group              [9]GroupMember
-	Commands           []string
-	Reportables        []string
-	AccountName        string
-	Uptime             int
-	RoomWeather        string
-	CharacterName      string
-	ServerTime         int
-	SnippetVersion     string
-	Affects            []Affect
-	Alignment          int
-	Experience         int
-	ExperienceMax      int
-	ExperienceTNL      int
-	Health             int
-	HealthMax          int
-	Level              int
-	Race               string
-	Class              string
-	Mana               int
-	ManaMax            int
-	Wimpy              int
-	Practice           int
-	Gold               int
-	BankGold           int
-	Stamina            int
-	StaminaMax         int
-	Hitroll            int
-	Damroll            int
-	AC                 int
-	Str                int
-	Int                int
-	Wis                int
-	Dex                int
-	Con                int
-	Luk                int
-	StrPerm            int
-	IntPerm            int
-	WisPerm            int
-	DexPerm            int
-	ConPerm            int
-	LukPerm            int
-	StrMax             int
-	IntMax             int
-	WisMax             int
-	DexMax             int
-	ConMax             int
-	QPoints            int
-	Position           string
-	WhoFlags           string
-	CombatStance       string
-	MountName          string
-	MountHealth        int
-	MountStamina       int
-	MountStaminaMax    int
-	Ranged             bool
-	Prompt             string
-	Wield              string
-	Hold               string
-	Shield             string
-	Quickdraw          string
-	Hunger             int
-	Thirst             int
-	Bardsong           string
-	OpponentHealth     int
-	OpponentHealthMax  int
-	OpponentStamina    int
-	OpponentStaminaMax int
-	OpponentLevel      int
-	OpponentName       string
-	OpponentNumber     int
-	AreaName           string
-	AreaMinLevel       int
-	AreaMaxLevel       int
-	RoomExits          struct{}
-	RoomName           string
-	RoomTerrain        string
-	RoomVnum           string
-	WorldTime          int
-	ClientID           string
-	ClientVersion      string
-	PluginID           string
-	AnsiColors         int
-	Xterm256Colors     int
-	UTF8               int
-	Sound              int
-	MXP                int
-	ParagonLevel       int
-	HeroPoints         int
-	HeroPointsTNL      int
-	NoblePoints        int
-	NoblePointsTNL     int
-	PCInZone           bool
-	PCInRoom           bool
-	GroupLevel         int
-	Equipment          string
-	Queue              int
-	RemortLevels       int
-	RemortLapsTotal    int
-
-	c net.Conn
-}
-
-type Affect struct {
-}
-type GroupMember struct {
-	Class        string
-	Flags        string
-	Health       int
-	Is_Leader    bool
-	Is_Subleader bool
-	Level        int
-	Name         string
-	Position     string
-	Stamina      int
-	With_Leader  bool
-	With_You     bool
-	Mana         int
-	NPC          bool
-	Race         string
+	Data map[string]interface{}
+	c    net.Conn
 }
 
 func NewMSDP() *MSDPHandler {
-	return &MSDPHandler{}
+	return &MSDPHandler{
+		Data: make(map[string]interface{}),
+	}
 }
 
 func (m MSDPHandler) SendMSDP(s string) {
@@ -203,361 +61,127 @@ func (m MSDPHandler) HandleWill(c net.Conn) {
 		[]byte{MSDP_VAR}, []byte("LIST"), []byte{MSDP_VAL}, []byte("REPORTABLE_VARIABLES"),
 		[]byte{IAC, SE})
 	c.Write(msg)
-
-}
-
-func readString(b []byte) (string, []byte) {
-	idx := 0
-
-	for i := 0; i < len(b); i++ {
-		if b[i] == MSDP_VAR ||
-			b[i] == MSDP_VAL ||
-			b[i] == MSDP_TABLE_OPEN ||
-			b[i] == MSDP_TABLE_CLOSE ||
-			b[i] == MSDP_ARRAY_OPEN ||
-			b[i] == MSDP_ARRAY_CLOSE ||
-			b[i] == 255 {
-			idx = i - 1
-			break
-		}
-		idx = i
-	}
-	idx += 1
-
-	val := string(b[:idx])
-	b = b[idx:]
-	return val, b
-}
-
-func readInteger(b []byte) (int, []byte) {
-	var tmp string
-	tmp, b = readString(b)
-	var val int
-	val, _ = strconv.Atoi(tmp)
-	return val, b
-}
-
-func readArray(b []byte) ([]string, []byte) {
-	var obj []string
-	for b[0] != MSDP_ARRAY_CLOSE {
-		b = b[1:]
-		if b[0] == MSDP_TABLE_OPEN {
-			log.Printf("TABLE OPEN\n")
-			var x interface{}
-			x, b = readTable(b)
-			log.Printf("TABLE %v\n", x)
-		} else {
-
-			var str string
-			str, b = readString(b)
-			log.Printf("ARRAY ELEMENT %v\n", str)
-			obj = append(obj, str)
-		}
-	}
-	b = b[1:]
-	log.Printf("Read Array: %+v", obj)
-	return obj, b
-}
-
-func readTable(b []byte) (map[string]interface{}, []byte) {
-	res := make(map[string]interface{})
-	var idx string
-	for b[0] != MSDP_TABLE_CLOSE {
-		switch b[0] {
-		case MSDP_VAR:
-			b = b[1:]
-			idx, b = readString(b)
-		case MSDP_VAL:
-			b = b[1:]
-			res[idx], b = readString(b)
-		default:
-			fmt.Printf("Default case in readTable %v\n", b)
-			b = b[1:]
-		}
-
-	}
-	b = b[1:]
-	return res, b
 }
 
 func (m *MSDPHandler) HandleSB(conn net.Conn, b []byte) {
-	//log.Printf("Handling SB string %v\n", b)
-	b = b[1:]
-	cur := ""
-
-	// Let's try to short circuit with some expected values
-	if b[0] == MSDP_VAR {
-		b = b[1:]
-		var field string
-		field, b = readString(b)
-
-		// See if we already know about this
-		if val, ok := MSDP_FIELDS[field]; ok {
-			//log.Printf("Try to intercept %s", field)
-			switch val.Type {
-			case "string":
-				var tmp string
-				r := reflect.ValueOf(m)
-				f := reflect.Indirect(r).FieldByName(val.Field)
-				b = b[1:] // ditch val byte
-				tmp, b = readString(b)
-				f.SetString(tmp)
-				//log.Printf("Intercepted value %s, got %s", field, tmp)
-				if len(b) == 1 && b[0] == 255 {
-					return
-				} else {
-					log.Printf("Remainder of MSDP interception - %d bytes (%v)", len(b), b)
-					return
-				}
-			case "integer":
-				var tmp int
-				r := reflect.ValueOf(m)
-				f := reflect.Indirect(r).FieldByName(val.Field)
-				b = b[1:] // ditch val byte
-				tmp, b = readInteger(b)
-				f.SetInt(int64(tmp))
-				//log.Printf("Intercepted value %s, got %d", field, tmp)
-				if len(b) == 1 && b[0] == 255 {
-					return
-				} else {
-					log.Printf("Remainder of MSDP interception - %d bytes (%v)", len(b), b)
-					return
-				}
-			case "list":
-				var tmp []string
-				r := reflect.ValueOf(m)
-				f := reflect.Indirect(r).FieldByName(val.Field)
-
-				b = b[1:] // ditch val byte
-				tmp, b = readArray(b)
-				n := len(tmp)
-				if n > f.Cap() {
-					ncap := 2 * n
-					if ncap < 4 {
-						ncap = 4
-					}
-					nval := reflect.MakeSlice(f.Type(), n, ncap)
-					reflect.Copy(nval, f)
-					f.Set(nval)
-				}
-				f.SetLen(n + 1)
-				for i := range tmp {
-					f.Index(i).SetString(tmp[i])
-				}
-				//log.Printf("Intercepted value %s, got %+v", field, tmp)
-
-				// Special case for REPORTABLE_VARIABLES
-				if field == "REPORTABLE_VARIABLES" {
-					msg := MSDPMessage([]byte{IAC, SB, m.OptionCode()}, []byte{MSDP_VAR}, []byte("REPORT"))
-					for _, msdpvar := range m.Reportables {
-						msg = MSDPMessage(msg, []byte{MSDP_VAL}, []byte(msdpvar))
-					}
-					msg = MSDPMessage(msg, []byte{IAC, SE})
-					log.Printf("Got reportables, sending request for all variables")
-					conn.Write(msg)
-				}
-
-			default:
-				log.Printf("Interception of %s failed due to unknown var type '%s'", field, val.Type)
-			}
-		} else {
-			log.Printf("Unknown MSDP field %s", field)
-		}
-
+	// Construct full MSDP segment (IAC SB MSDP [data] IAC SE)
+	// b already starts with MSDP byte and may end with IAC (255)
+	// If b ends with IAC, we just need to add SE; otherwise add IAC SE
+	fullSegment := append([]byte{IAC, SB}, b...)
+	if len(fullSegment) > 0 && fullSegment[len(fullSegment)-1] == IAC {
+		// Already has IAC, just add SE
+		fullSegment = append(fullSegment, SE)
+	} else {
+		// No IAC at end, add IAC SE
+		fullSegment = append(fullSegment, IAC, SE)
 	}
 
-	is_array := false
-	array_index := 0
-	is_table := false
-	for len(b) > 0 {
-		switch b[0] {
-		case MSDP_VAR:
-			b = b[1:]
-			cur, b = readString(b)
-		case MSDP_VAL:
-			b = b[1:]
-			if is_array {
-				log.Printf("Handling array in SB\n")
-			}
-			if is_table {
-				log.Printf("Handling table in SB\n")
-			}
-			switch cur {
-			case "ACCOUNT_NAME":
-				m.AccountName, b = readString(b)
-			case "AREA_MAXLEVEL":
-				m.AreaMaxLevel, b = readInteger(b)
-			case "AREA_MINLEVEL":
-				m.AreaMinLevel, b = readInteger(b)
-			case "AREA_NAME":
-				m.AreaName, b = readString(b)
-			case "BANK_GOLD":
-				m.BankGold, b = readInteger(b)
-			case "COMMANDS":
-			case "EXPERIENCE":
-				m.Experience, b = readInteger(b)
-			case "GOLD":
-				m.Gold, b = readInteger(b)
-			case "GROUPLEVEL":
-				m.GroupLevel, b = readInteger(b)
-			case "PC_IN_ROOM":
-				var tmp string
-				tmp, b = readString(b)
-				if tmp == "1" {
-					m.PCInRoom = true
-				} else {
-					m.PCInRoom = false
-				}
-			case "PC_IN_ZONE":
-				var tmp string
-				tmp, b = readString(b)
-				if tmp == "1" {
-					m.PCInZone = true
-				} else {
-					m.PCInZone = false
-				}
-			case "PROMPT":
-				m.Prompt, b = readString(b)
+	// Parse the MSDP data using the new parser
+	parsed, err := msdp.ParseMSDP(fullSegment)
+	if err != nil {
+		log.Printf("Error parsing MSDP: %v", err)
+		return
+	}
 
-			case "ROOM_WEATHER":
-				m.RoomWeather, b = readString(b)
-			case "ROOM_NAME":
-				m.RoomName, b = readString(b)
-			case "ROOM_TERRAIN":
-				m.RoomTerrain, b = readString(b)
-			case "ROOM_VNUM":
-				m.RoomVnum, b = readString(b)
-
-			case "REPORTABLE_VARIABLES":
-
-			case "SERVER_ID":
-				m.Server_ID, b = readString(b)
-			case "SHIELD":
-				m.Shield, b = readString(b)
-			case "STR":
-				m.Str, b = readInteger(b)
-			case "STR_MAX":
-				m.StrMax, b = readInteger(b)
-			case "STR_PERM":
-				m.StrPerm, b = readInteger(b)
-			case "WHOFLAGS":
-				m.WhoFlags, b = readString(b)
-			case "WIS":
-				m.Wis, b = readInteger(b)
-			case "WIS_MAX":
-				m.WisMax, b = readInteger(b)
-			case "WIS_PERM":
-				m.WisPerm, b = readInteger(b)
-			case "WORLD_TIME":
-				m.WorldTime, b = readInteger(b)
-
-			default:
-				log.Printf("Unhandled SB VAL on %v: %v\n", cur, b)
-			}
-			if len(b) == 1 && b[0] == 255 {
-				b = b[1:]
-			}
-		case MSDP_ARRAY_OPEN:
-			b = b[1:]
-			is_array = true
-			log.Printf("Found array %v\n", cur)
-			switch cur {
-			case "COMMANDS":
-				m.Commands, b = readArray(b)
-				log.Printf("Got some commands: %+v", m.Commands)
-			case "REPORTABLE_VARIABLES":
-				m.Reportables, b = readArray(b)
-				log.Printf("Got some reportables: %+v", m.Commands)
-				msg := MSDPMessage([]byte{IAC, SB, m.OptionCode()}, []byte{MSDP_VAR}, []byte("REPORT"))
-				for _, msdpvar := range m.Reportables {
-					msg = MSDPMessage(msg, []byte{MSDP_VAL}, []byte(msdpvar))
-				}
-				msg = MSDPMessage(msg, []byte{IAC, SE})
-				conn.Write(msg)
-
-			default:
-				log.Printf("Unhandled SB ARRAY OPEN on %v\n", cur)
-			}
-		case MSDP_ARRAY_CLOSE:
-			// Close out array
-			log.Printf("Closing array %s\n", cur)
-			switch cur {
-			case "GROUP":
-				for i := array_index; i < 9; i++ {
-					m.Group[i] = GroupMember{}
-
+	// Check if REPORTABLE_VARIABLES is in the newly parsed data (not just in existing map)
+	// This ensures we only send REPORT when we actually receive REPORTABLE_VARIABLES
+	var reportablesList []string
+	if reportables, ok := parsed["REPORTABLE_VARIABLES"]; ok {
+		switch v := reportables.(type) {
+		case []interface{}:
+			for _, item := range v {
+				if str, ok := item.(string); ok {
+					reportablesList = append(reportablesList, str)
 				}
 			}
-			array_index = 0
-			b = b[1:]
+		case []string:
+			reportablesList = v
+		}
+	}
 
-		case MSDP_TABLE_OPEN:
-			b = b[1:]
-			is_table = true
-			var x map[string]interface{}
-			x, b = readTable(b)
-			switch cur {
-			case "GROUP":
-				//log.Printf("Group entry %d: %v\n", array_index, x)
-				x_health, _ := strconv.Atoi(x["health"].(string))
-				x_leader, _ := x["is_leader"].(string)
-				x_subleader, _ := x["is_subleader"].(string)
-				x_level, _ := strconv.Atoi(x["level"].(string))
-				x_mana, _ := strconv.Atoi(x["mana"].(string))
-				x_stamina, _ := strconv.Atoi(x["stamina"].(string))
-				x_race, _ := x["race"].(string)
-				x_npc, _ := x["npc"].(string)
-				x_with_lead, _ := x["with_leader"].(string)
-				x_with_you, _ := x["with_you"].(string)
+	// Merge parsed data into our Data map
+	for k, v := range parsed {
+		m.Data[k] = v
+	}
 
-				m.Group[array_index] = GroupMember{
-					Class:    x["class"].(string),
-					Flags:    x["flags"].(string),
-					Health:   x_health,
-					Level:    x_level,
-					Name:     x["name"].(string),
-					Position: x["position"].(string),
-					Stamina:  x_stamina,
-					Mana:     x_mana,
-					Race:     x_race,
-				}
-				if x_leader != "0" {
-					m.Group[array_index].Is_Leader = true
-				}
-				if x_subleader != "0" {
-					m.Group[array_index].Is_Subleader = true
-				}
-				if x_npc != "pc" {
-					m.Group[array_index].NPC = true
-				}
-				if x_with_lead != "0" {
-					m.Group[array_index].With_Leader = true
-				}
-				if x_with_you != "0" {
-					m.Group[array_index].With_You = true
-				}
+	// Handle REPORTABLE_VARIABLES - send REPORT request for all variables
+	// Only send if we actually received REPORTABLE_VARIABLES in this message
+	if len(reportablesList) > 0 {
+		msg := MSDPMessage([]byte{IAC, SB, m.OptionCode()}, []byte{MSDP_VAR}, []byte("REPORT"))
+		for _, msdpvar := range reportablesList {
+			msg = MSDPMessage(msg, []byte{MSDP_VAL}, []byte(msdpvar))
+		}
+		msg = MSDPMessage(msg, []byte{IAC, SE})
+		log.Printf("Got reportables, sending request for %d variables", len(reportablesList))
+		conn.Write(msg)
+	}
+}
 
-				array_index += 1
-
-			default:
-				log.Printf("Found table %v (parsed %v)\n", cur, x)
-			}
-
-		case MSDP_TABLE_CLOSE:
-			b = b[1:]
+// GetString retrieves a string value from the MSDP data
+func (m *MSDPHandler) GetString(key string) string {
+	if val, ok := m.Data[key]; ok {
+		switch v := val.(type) {
+		case string:
+			return v
+		case []interface{}:
+			// If it's an array, return empty string or first element as string?
+			return ""
 		default:
-			if b[0] == 255 && len(b) == 1 {
-				b = b[1:]
-			} else {
-				log.Printf("Unexpected byte: %v\n", b[0])
-				b = b[1:]
-			}
+			return fmt.Sprintf("%v", v)
 		}
 	}
-	is_array = false
-	is_table = false
-	if len(b) > 0 {
-		log.Printf("Remaining b: %v\n", b)
+	return ""
+}
+
+// GetInt retrieves an integer value from the MSDP data
+func (m *MSDPHandler) GetInt(key string) int {
+	if val, ok := m.Data[key]; ok {
+		switch v := val.(type) {
+		case int:
+			return v
+		case string:
+			if i, err := strconv.Atoi(v); err == nil {
+				return i
+			}
+		case float64:
+			return int(v)
+		}
 	}
-	//fmt.Printf("Found %v\n", cur)
+	return 0
+}
+
+// GetBool retrieves a boolean value from the MSDP data
+// Handles "1"/"0" string conversions and actual boolean values
+func (m *MSDPHandler) GetBool(key string) bool {
+	if val, ok := m.Data[key]; ok {
+		switch v := val.(type) {
+		case bool:
+			return v
+		case string:
+			return v == "1" || v == "true" || v == "True" || v == "TRUE"
+		case int:
+			return v != 0
+		}
+	}
+	return false
+}
+
+// GetArray retrieves an array value from the MSDP data
+func (m *MSDPHandler) GetArray(key string) []interface{} {
+	if val, ok := m.Data[key]; ok {
+		if arr, ok := val.([]interface{}); ok {
+			return arr
+		}
+	}
+	return nil
+}
+
+// GetTable retrieves a table (map) value from the MSDP data
+func (m *MSDPHandler) GetTable(key string) map[string]interface{} {
+	if val, ok := m.Data[key]; ok {
+		if table, ok := val.(map[string]interface{}); ok {
+			return table
+		}
+	}
+	return nil
 }
