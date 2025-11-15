@@ -143,12 +143,22 @@ func FindPathBFS(s *session.Session, fromVnum string, toVnum string) ([]string, 
 			// Found the destination room, store the path
 			var pathVNUMs []string
 			var pathDirections []string
-			for _, step := range path {
+			for i, step := range path {
 				pathVNUMs = append(pathVNUMs, step.Room.VNUM)
-				if step.Room.Exits[step.Direction].Commands == nil {
-					pathDirections = append(pathDirections, step.Direction)
-				} else {
-					pathDirections = append(pathDirections, *step.Room.Exits[step.Direction].Commands)
+				// Skip the first step (starting room) as it has no direction
+				if i > 0 && step.Direction != "" {
+					// Look up the exit in the previous room (the room we're coming from)
+					prevRoom := path[i-1].Room
+					if exit, exists := prevRoom.Exits[step.Direction]; exists {
+						if exit.Commands != nil && *exit.Commands != "" {
+							pathDirections = append(pathDirections, *exit.Commands)
+						} else {
+							pathDirections = append(pathDirections, step.Direction)
+						}
+					} else {
+						// Fallback to the direction if exit lookup fails
+						pathDirections = append(pathDirections, step.Direction)
+					}
 				}
 			}
 			return pathVNUMs, pathDirections
@@ -189,9 +199,24 @@ func CmdBFSRoomToRoom(s *session.Session, arg string) {
 	d.Travel.To = toVnum
 	d.Travel.Length = len(pathVNUMs) - 1 // don't count the room we're in
 	d.Travel.Distance = len(pathVNUMs) - 1
-	// Index 1 is the first direction since we're in room 0?
-	s.Output("Traveling to " + toVnum + ", sending " + pathDirections[1] + "\n")
-	s.Socket.Write([]byte(pathDirections[1] + "\n"))
+	
+	// Check if we have a valid path with at least one direction
+	if len(pathDirections) == 0 {
+		s.Output("No valid path found\n")
+		return
+	}
+	
+	room := GetRoomByVNUM(s, pathVNUMs[0])
+	// Use the first direction (index 0) since pathDirections contains directions between rooms
+	var method string
+	if room.Exits[pathDirections[0]].Commands != nil && *room.Exits[pathDirections[0]].Commands != "" {
+		method = *room.Exits[pathDirections[0]].Commands
+	} else {
+		method = pathDirections[0]
+	}
+
+	s.Output("Traveling to " + toVnum + " from " + fromVnum + ", sending " + method + "\n")
+	s.Socket.Write([]byte(method + "\n"))
 
 }
 
@@ -287,19 +312,23 @@ func GetBFSGrid(s *session.Session, x int, y int) [][]*AtlasRoomRecord {
 		visited[here.Room.VNUM] = true
 		if matrix[here.Y][here.X] == nil {
 			matrix[here.Y][here.X] = here.Room
-			for _, exit := range here.Room.Exits {
+			var exits []AtlasExitRecord
+			for _, k := range []string{"north", "east", "south", "west"} {
+				if e, ok := here.Room.Exits[k]; ok {
+					exits = append(exits, e)
+				}
+			}
+
+			for _, exit := range exits {
 				nextRoom := GetRoomByVNUM(s, exit.ToVnum)
 				if nextRoom != nil {
 					if exit.Direction == "north" && here.Y-1 >= 0 {
 						queue = append(queue, MapPoint{Room: nextRoom, X: here.X, Y: here.Y - 1})
-					}
-					if exit.Direction == "south" && here.Y+1 < len(matrix) {
+					} else if exit.Direction == "south" && here.Y+1 < len(matrix) {
 						queue = append(queue, MapPoint{Room: nextRoom, X: here.X, Y: here.Y + 1})
-					}
-					if exit.Direction == "east" && here.X+1 < len(matrix[here.Y]) {
+					} else if exit.Direction == "east" && here.X+1 < len(matrix[here.Y]) {
 						queue = append(queue, MapPoint{Room: nextRoom, X: here.X + 1, Y: here.Y})
-					}
-					if exit.Direction == "west" && here.X-1 >= 0 {
+					} else if exit.Direction == "west" && here.X-1 >= 0 {
 						queue = append(queue, MapPoint{Room: nextRoom, X: here.X - 1, Y: here.Y})
 					}
 				}

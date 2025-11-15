@@ -386,6 +386,21 @@ func GetTerrainMapSymbol(terrain string) string {
 	return symbol
 }
 
+func GetBestTerrainByColor(terrain string) string {
+	terrainWords := strings.Split(terrain, " ")
+	lowestSortValue := -1
+	t := "Unknown"
+	for _, word := range terrainWords {
+		terrain := GetTerrainByName(word)
+		if terrain != nil && (lowestSortValue == -1 || terrain.ColorSort < lowestSortValue) {
+			lowestSortValue = terrain.ColorSort
+			t = terrain.Name
+		}
+	}
+	//log.Printf("Terrain: %s, Color: %s", terrain, color)
+	return t
+}
+
 func GetTerrainMapColor(terrain string) string {
 	terrainWords := strings.Split(terrain, " ")
 	lowestSortValue := -1

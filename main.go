@@ -154,6 +154,21 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Viewport.GotoBottom()
 		}
 
+		if useHighPerformanceRenderer {
+			// Render (or re-render) the whole viewport. Necessary both to
+			// initialize the viewport and when the window is resized.
+			//
+			// This is needed for high-performance rendering only.
+			cmds = append(cmds, viewport.Sync(m.Viewport))
+			if m.LeftSideBarActive {
+				cmds = append(cmds, viewport.Sync(m.LeftSideBar))
+			}
+
+			if m.RightSideBarActive {
+				cmds = append(cmds, viewport.Sync(m.RightSideBar))
+			}
+		}
+
 		// update map?
 		if m.SessionHandler.ActiveSession().Connected && m.RightSideBarActive {
 			if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {

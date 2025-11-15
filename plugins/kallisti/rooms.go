@@ -42,8 +42,24 @@ func ParseRoom(s *session.Session, evt session.EventData) {
 			} else {
 				// Move to the next room, which is the second room in the path
 				d.Travel.Distance = len(path) - 1
-				s.Output(fmt.Sprintf("Moving to %s\n", directions[1]))
-				s.Socket.Write([]byte(directions[1] + "\n"))
+				
+				// Check if we have a valid path with at least one direction
+				if len(directions) == 0 {
+					s.Output("No valid path found\n")
+					d.Travel.On = false
+					return
+				}
+				
+				room := GetRoomByVNUM(s, path[0])
+				// Use the first direction (index 0) since directions contains directions between rooms
+				var method string
+				if room.Exits[directions[0]].Commands != nil && *room.Exits[directions[0]].Commands != "" {
+					method = *room.Exits[directions[0]].Commands
+				} else {
+					method = directions[0]
+				}
+				s.Output(fmt.Sprintf("Moving to %s\n", method))
+				s.Socket.Write([]byte(method + "\n"))
 			}
 		}
 	}
