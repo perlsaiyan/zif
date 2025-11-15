@@ -189,10 +189,11 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Password_mode {
 				log.Printf("Turning on password mode\n")
 				m.Input.EchoMode = textinput.EchoPassword
-
+				m.SessionHandler.ActiveSession().PasswordMode = true
 			} else {
 				log.Printf("Turning off password mode\n")
 				m.Input.EchoMode = textinput.EchoNormal
+				m.SessionHandler.ActiveSession().PasswordMode = false
 			}
 
 			cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
@@ -220,6 +221,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if k := msg.String(); k == "enter" {
 			m.Input.Placeholder = ""
 			order := strings.TrimSpace(m.Input.Value())
+			log.Printf("DEBUG main.go: Calling HandleInput with: %q", order)
 			m.SessionHandler.ActiveSession().HandleInput(order)
 			m.Input.SetValue("")
 		} else {

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	lua "github.com/yuin/gopher-lua"
+	"github.com/perlsaiyan/zif/config"
 	kallisti "github.com/perlsaiyan/zif/protocol"
 )
 
@@ -34,18 +36,41 @@ type Session struct {
 	Sub          chan tea.Msg
 	Tickers      *TickerRegistry
 	Actions      *ActionRegistry
+	Aliases      *AliasRegistry
 	Events       *EventRegistry
 	Queue        *QueueRegistry
 	Data         map[string]interface{}
+	LuaState     *lua.LState
+	Modules      *ModuleRegistry
+	EchoNegotiated bool // Infinite loop protection: track if we've responded to ECHO negotiation
+	LoginComplete   bool // Track if we've completed login (entered the game)
 }
 
 // HandleInput processes the input command.
 func (s *Session) HandleInput(cmd string) {
+	log.Printf("DEBUG HandleInput called with: %q, PasswordMode: %v", cmd, s.PasswordMode)
 	if cmd == "" {
 		if s.Connected {
 			s.Socket.Write([]byte("\n"))
 		}
 		return
+	}
+
+	// Output the command in bright white (unless in password mode)
+	if !s.PasswordMode {
+		// Try multiple ANSI formats for maximum compatibility
+		// Format 1: RGB (most compatible with modern terminals)
+		// Format 2: Bright white (8-bit color)
+		// Using both: set bright white, then RGB as fallback
+		coloredCmd := "\x1b[1;37m" + cmd + "\x1b[0m\n" // Bright white: \x1b[1;37m
+		log.Printf("DEBUG: Outputting colored command: %q", coloredCmd)
+		s.Output(coloredCmd)
+		log.Printf("DEBUG: Content after output: %q", s.Content[len(s.Content)-50:])
+	}
+
+	// Check for aliases first (before internal commands)
+	if s.Aliases != nil && s.MatchAlias(cmd) {
+		return // Alias handled the command
 	}
 
 	if cmd[0] == '#' {
@@ -78,6 +103,31 @@ func NewHandler() SessionHandler {
 	}
 	s.Handler = &sh
 	sh.Sessions["zif"] = &s
+	
+	// Initialize Lua state and registries for the default session
+	s.LuaState = lua.NewState()
+	s.Actions = NewActionRegistry()
+	s.Aliases = NewAliasRegistry()
+	s.Modules = NewModuleRegistry()
+
+	// Register Lua API
+	s.RegisterLuaAPI()
+
+	// Ensure config directories exist
+	if err := config.EnsureConfigDirs(); err != nil {
+		log.Printf("Warning: failed to ensure config directories: %v", err)
+	}
+
+	// Load global modules first
+	if err := LoadGlobalModules(&s); err != nil {
+		log.Printf("Warning: failed to load global modules: %v", err)
+	}
+
+	// Load session-specific modules for default session
+	if err := LoadSessionModules(&s, "zif"); err != nil {
+		log.Printf("Warning: failed to load session modules: %v", err)
+	}
+	
 	return sh
 }
 
@@ -90,13 +140,16 @@ func (s *SessionHandler) AddSession(name, address string) {
 		Sub:   s.Sub,
 
 		Actions: NewActionRegistry(),
+		Aliases: NewAliasRegistry(),
 		Events:  NewEventRegistry(),
 		Queue:   NewQueueRegistry(),
 
 		Ringlog: NewRingLog(),
 		Handler: s,
 
-		Data: make(map[string]interface{}),
+		Data:     make(map[string]interface{}),
+		LuaState: lua.NewState(),
+		Modules:  NewModuleRegistry(),
 	}
 
 	// Initialize the priority Queue
@@ -125,6 +178,24 @@ func (s *SessionHandler) AddSession(name, address string) {
 
 	newSession.Connected = true
 	NewTickerRegistry(newSession.Context, newSession)
+
+	// Register Lua API
+	newSession.RegisterLuaAPI()
+
+	// Ensure config directories exist
+	if err := config.EnsureConfigDirs(); err != nil {
+		log.Printf("Warning: failed to ensure config directories: %v", err)
+	}
+
+	// Load global modules first
+	if err := LoadGlobalModules(newSession); err != nil {
+		log.Printf("Warning: failed to load global modules: %v", err)
+	}
+
+	// Load session-specific modules
+	if err := LoadSessionModules(newSession, name); err != nil {
+		log.Printf("Warning: failed to load session modules: %v", err)
+	}
 
 	for _, v := range s.Plugins.Plugins {
 		log.Printf("Activating plugin: %s", v.Name)

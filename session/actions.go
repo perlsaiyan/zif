@@ -81,6 +81,10 @@ func (s *Session) ActionParser(line []byte) {
 	striptest := stripansi.Strip(test)
 
 	for _, a := range s.Actions.Actions {
+		if !a.Enabled {
+			continue
+		}
+		
 		var matched bool
 		var matchedText string
 

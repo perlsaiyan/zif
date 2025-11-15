@@ -21,9 +21,11 @@ type Command struct {
 
 var internalCommands = []Command{
 	{Name: "actions", Fn: CmdActions},
+	{Name: "aliases", Fn: CmdAliases},
 	{Name: "cancel", Fn: CmdCancelTicker},
 	{Name: "events", Fn: CmdEvents},
 	{"help", CmdHelp},
+	{Name: "modules", Fn: CmdModules},
 	{Name: "msdp", Fn: CmdMSDP},
 	{Name: "plugins", Fn: CmdPlugins},
 	{Name: "queue", Fn: CmdQueue},
@@ -35,8 +37,10 @@ var internalCommands = []Command{
 }
 
 var internalCommandHelp = map[string]string{
+	"aliases":  "Show aliases",
 	"cancel":   "Cancel test for timers",
 	"help":     "This help command",
+	"modules":  "Show modules or enable/disable: #modules [enable|disable] <name>",
 	"msdp":     "Show MSDP values",
 	"session":  "Usage: #session <name> <host:port>",
 	"sessions": "Show current sessions",
@@ -295,8 +299,68 @@ func CmdSessions(s *Session, cmd string) {
 	s.Output(t.View() + "\n")
 }
 
+func CmdModules(s *Session, cmd string) {
+	fields := strings.Fields(cmd)
+	
+	if len(fields) == 0 {
+		// List all modules
+		var rows []table.Row
+		for _, module := range s.Modules.Modules {
+			enabledStr := "disabled"
+			if module.Enabled {
+				enabledStr = "enabled"
+			}
+			rows = append(rows, table.NewRow(table.RowData{
+				"name":     module.Name,
+				"path":     module.Path,
+				"enabled":  enabledStr,
+				"triggers": len(module.Triggers),
+				"aliases":  len(module.Aliases),
+				"timers":   len(module.Timers),
+			}))
+		}
+
+		t := table.New([]table.Column{
+			table.NewColumn("name", "Name", 20).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
+			table.NewColumn("path", "Path", 40).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
+			table.NewColumn("enabled", "Status", 10).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
+			table.NewColumn("triggers", "Triggers", 10).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
+			table.NewColumn("aliases", "Aliases", 10).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
+			table.NewColumn("timers", "Timers", 10).WithStyle(lipgloss.NewStyle().Align(lipgloss.Center)),
+		}).
+			WithRows(rows).
+			BorderRounded()
+
+		s.Output(t.View() + "\n")
+	} else if len(fields) >= 2 {
+		// Enable or disable module
+		action := strings.ToLower(fields[0])
+		moduleName := fields[1]
+
+		switch action {
+		case "enable":
+			if err := s.EnableModule(moduleName); err != nil {
+				s.Output(fmt.Sprintf("Error enabling module %s: %v\n", moduleName, err))
+			} else {
+				s.Output(fmt.Sprintf("Enabled module: %s\n", moduleName))
+			}
+		case "disable":
+			if err := s.DisableModule(moduleName); err != nil {
+				s.Output(fmt.Sprintf("Error disabling module %s: %v\n", moduleName, err))
+			} else {
+				s.Output(fmt.Sprintf("Disabled module: %s\n", moduleName))
+			}
+		default:
+			s.Output("Usage: #modules [enable|disable] <name>\n")
+		}
+	} else {
+		s.Output("Usage: #modules [enable|disable] <name>\n")
+	}
+}
+
 func (s *Session) ParseInternalCommand(cmd string) {
-	s.Content += cmd + "\n"
+	// Note: Command has already been added to Content (colored) in HandleInput()
+	// so we don't add it again here to avoid duplication
 	parsed := strings.Fields(cmd[1:])
 	args := strings.SplitN(cmd, " ", 2)
 
@@ -317,14 +381,13 @@ func (s *Session) ParseInternalCommand(cmd string) {
 }
 
 func (s *Session) ParseCommand(cmd string) {
-	if !s.PasswordMode {
-		s.Content += cmd + "\n"
-	}
+	// Note: Command has already been added to Content (colored) in HandleInput()
+	// and an UpdateMessage was already sent, so we don't need to send another one
 
 	// TODO: We'll want to check this for aliases and/or variables
 	if s.Connected {
 		s.Socket.Write([]byte(cmd + "\n"))
 	}
 
-	s.Sub <- UpdateMessage{Session: s.Name}
+	// No need to send UpdateMessage here - Output() already sent one with the colored command
 }

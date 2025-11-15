@@ -64,18 +64,28 @@ func (s *Session) mudReader() tea.Cmd {
 				outbuf = outbuf[:0]
 			} else if buffer[0] == 251 { // WILL
 				_, _ = s.Socket.Read(buffer)
-				//log.Println("Debug WILL:", buffer)
+				log.Printf("DEBUG IAC WILL: %v (decimal: %d)", buffer[0], buffer[0])
 				if buffer[0] == 1 { // ECHO / password mask
-					log.Printf("Got password mask request (IAC WILL ECHO)")
-					if !s.PasswordMode {
-						s.PasswordMode = true
-						//log.Printf("Sending DO ECHO\n")
-						buf := []byte{255, 253, 1} // send IAC DO ECHO
-						s.Socket.Write(buf)
-						sub <- TextinputMsg{Session: s.Name, Password_mode: true, Toggle_password: true}
+					log.Printf("DEBUG: Got password mask request (IAC WILL ECHO), current PasswordMode: %v, EchoNegotiated: %v, LoginComplete: %v", s.PasswordMode, s.EchoNegotiated, s.LoginComplete)
+					
+					// Only accept ECHO requests during login (before LoginComplete)
+					// After login is complete, ignore ECHO requests to prevent password mode from turning on in-game
+					if s.LoginComplete {
+						log.Printf("DEBUG: Login complete, ignoring ECHO request (infinite loop protection)")
+						// Don't respond at all - this prevents password mode from turning on in-game
+						// The ECHO handling is done, continue to next iteration
 					} else {
-						//sub <- TextinputMsg{Session: s.Name, Password_mode: true, Toggle_password: true}
-						//log.Printf("Skipping DO ECHO (loop protection) (currently %v)\n", s.PasswordMode)
+						// Infinite loop protection: only respond if we haven't already negotiated this
+						if !s.EchoNegotiated {
+							s.EchoNegotiated = true
+							s.PasswordMode = true
+							log.Printf("DEBUG: Setting PasswordMode to true and sending DO ECHO")
+							buf := []byte{255, 253, 1} // send IAC DO ECHO
+							s.Socket.Write(buf)
+							sub <- TextinputMsg{Session: s.Name, Password_mode: true, Toggle_password: true}
+						} else {
+							log.Printf("DEBUG: Already negotiated ECHO, skipping DO ECHO (infinite loop protection)")
+						}
 					}
 
 				} else if buffer[0] == 69 {
@@ -90,8 +100,15 @@ func (s *Session) mudReader() tea.Cmd {
 				}
 			} else if buffer[0] == 252 { // WONT
 				_, _ = s.Socket.Read(buffer)
+				log.Printf("DEBUG IAC WONT: %v (decimal: %d)", buffer[0], buffer[0])
 				if buffer[0] == 1 {
-					log.Printf("Got password unmask request (IAC WONT ECHO)")
+					log.Printf("DEBUG: Got password unmask request (IAC WONT ECHO), current PasswordMode: %v, EchoNegotiated: %v", s.PasswordMode, s.EchoNegotiated)
+					// Clear the negotiation flag and mark login as complete
+					// After this point, we should ignore any future ECHO requests to prevent password mode from turning on in-game
+					s.EchoNegotiated = false
+					s.PasswordMode = false
+					s.LoginComplete = true // Mark login as complete after password entry
+					log.Printf("DEBUG: Setting PasswordMode to false, marking login as complete")
 					sub <- TextinputMsg{Session: s.Name, Password_mode: false, Toggle_password: true}
 				} else {
 					log.Printf("SERVER WONT %v (unhandled)\n", buffer)
