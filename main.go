@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"plugin"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,28 +15,24 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/perlsaiyan/zif/config"
+	"github.com/perlsaiyan/zif/layout"
 	"github.com/perlsaiyan/zif/session"
 
 	"github.com/mistakenelf/teacup/statusbar"
 )
 
 const useHighPerformanceRenderer = false
-const RightSideBarSize = 50
-const LeftSideBarSize = 50
 
 type ZifModel struct {
-	Name               string
-	Config             *config.Config
-	Plugins            []*plugin.Plugin
-	Input              textinput.Model
-	LeftSideBar        viewport.Model
-	LeftSideBarActive  bool
-	RightSideBar       viewport.Model
-	RightSideBarActive bool
-	Viewport           viewport.Model
-	SessionHandler     session.SessionHandler
-	StatusBar          statusbar.Model
-	Ready              bool
+	Name           string
+	Config         *config.Config
+	Plugins        []*plugin.Plugin
+	Input          textinput.Model
+	Viewport       viewport.Model // Kept for backward compatibility during transition
+	Layout         *layout.Layout // Flexible layout system
+	SessionHandler session.SessionHandler
+	StatusBar      statusbar.Model
+	Ready          bool
 }
 
 func (m ZifModel) Init() tea.Cmd {
@@ -49,39 +46,15 @@ func (m ZifModel) View() string {
 	if !m.Ready {
 		return "\n  Initializing..."
 	}
-	//return fmt.Sprintf("%s\n%s\n%s", m.headerView(), m.viewport.View(), m.footerView())
-	var verts []string
-	if m.LeftSideBarActive {
-		verts = append(verts, m.LeftSideBar.View())
-	}
-	verts = append(verts, m.Viewport.View())
-	if m.RightSideBarActive {
-		verts = append(verts, m.RightSideBar.View())
+
+	// Always use new layout system
+	if m.Layout != nil {
+		layoutContent := m.Layout.Render()
+		return lipgloss.JoinVertical(lipgloss.Top, layoutContent, m.Input.View(), m.StatusBar.View())
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Top, lipgloss.JoinHorizontal(lipgloss.Top, verts...), m.Input.View(), m.StatusBar.View())
-}
-
-func (m *ZifModel) ToggleSideBar(side string) {
-	switch side {
-	case "left":
-		m.LeftSideBarActive = !m.LeftSideBarActive
-		if m.LeftSideBarActive {
-			m.Viewport.Width -= LeftSideBarSize
-		} else {
-			m.Viewport.Width += LeftSideBarSize
-		}
-
-	case "right":
-
-		m.RightSideBarActive = !m.RightSideBarActive
-
-		if m.RightSideBarActive {
-			m.Viewport.Width -= RightSideBarSize
-		} else {
-			m.Viewport.Width += RightSideBarSize
-		}
-	}
+	// Fallback to single viewport if layout not initialized
+	return lipgloss.JoinVertical(lipgloss.Top, m.Viewport.View(), m.Input.View(), m.StatusBar.View())
 }
 
 // A command that waits for the activity on a channel.
@@ -114,9 +87,19 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.StatusBar.SecondColumn = "Not Connected"
 		}
-		m.StatusBar.ThirdColumn = fmt.Sprintf("%d/1000", m.Viewport.TotalLineCount())
-		m.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
-		m.Viewport.GotoBottom()
+
+		// Update layout system
+		if m.Layout != nil {
+			mainPane := m.Layout.FindPane("main")
+			if mainPane != nil {
+				mainPane.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
+				mainPane.Viewport.GotoBottom()
+				m.StatusBar.ThirdColumn = fmt.Sprintf("%d", mainPane.Viewport.TotalLineCount())
+			}
+			// Ensure map pane exists if kallisti is active
+			m.ensureMapPane()
+		}
+
 		cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
 
 	case session.UpdateMessage:
@@ -141,43 +124,38 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.StatusBar.SecondColumn = "Not Connected"
 		}
-		m.StatusBar.ThirdColumn = fmt.Sprintf("%d", m.Viewport.TotalLineCount())
 
-		jump := m.Viewport.AtBottom()
-		if jump {
-			lines := strings.Split(m.SessionHandler.ActiveSession().Content, "\n")
-			if len(lines) > 1000 {
-				m.SessionHandler.ActiveSession().Content = strings.Join(lines[len(lines)-1000:], "\n")
+		// Update content in layout system
+		if m.Layout != nil {
+			// Find the main viewport pane or active pane
+			mainPane := m.Layout.FindPane("main")
+			if mainPane == nil {
+				mainPane = m.Layout.GetActivePane()
 			}
-		}
-		m.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
-		if jump {
-			m.Viewport.GotoBottom()
-		}
-
-		if useHighPerformanceRenderer {
-			// Render (or re-render) the whole viewport. Necessary both to
-			// initialize the viewport and when the window is resized.
-			//
-			// This is needed for high-performance rendering only.
-			cmds = append(cmds, viewport.Sync(m.Viewport))
-			if m.LeftSideBarActive {
-				cmds = append(cmds, viewport.Sync(m.LeftSideBar))
+			if mainPane != nil {
+				jump := mainPane.Viewport.AtBottom()
+				if jump {
+					lines := strings.Split(m.SessionHandler.ActiveSession().Content, "\n")
+					if len(lines) > 1000 {
+						m.SessionHandler.ActiveSession().Content = strings.Join(lines[len(lines)-1000:], "\n")
+					}
+				}
+				mainPane.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
+				if jump {
+					mainPane.Viewport.GotoBottom()
+				}
+				m.StatusBar.ThirdColumn = fmt.Sprintf("%d", mainPane.Viewport.TotalLineCount())
 			}
 
-			if m.RightSideBarActive {
-				cmds = append(cmds, viewport.Sync(m.RightSideBar))
-			}
-		}
+			// Update map pane if kallisti plugin is active
+			m.updateMapPane()
 
-		// update map?
-		if m.SessionHandler.ActiveSession().Connected && m.RightSideBarActive {
-			if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
-				tp, err := k.Plugin.Lookup("MakeMap")
-				if err == nil {
-					m.RightSideBar.SetContent(tp.(func(*session.Session, int, int) string)(m.SessionHandler.ActiveSession(), RightSideBarSize, 20))
-				} else {
-					m.RightSideBar.SetContent("Lookup failure")
+			if useHighPerformanceRenderer {
+				// Sync all panes' viewports
+				for _, pane := range m.Layout.GetAllPanes() {
+					if pane.Viewport.Width > 0 && pane.Viewport.Height > 0 {
+						cmds = append(cmds, viewport.Sync(pane.Viewport))
+					}
 				}
 			}
 		}
@@ -199,29 +177,47 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
 		}
 
+	case layout.LayoutCommandMsg:
+		// Handle layout commands
+		m.handleLayoutCommand(msg)
+		cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
+
 	case tea.KeyMsg:
 		if k := msg.String(); k == "ctrl+c" {
 			return m, tea.Quit
 		} else if k := msg.String(); k == "pgup" || k == "pgdown" || k == "end" || k == "home" {
-			var viewcmd tea.Cmd
-			switch k {
-			case "end":
-				m.Viewport.GotoBottom()
-			case "home":
-				m.Viewport.GotoTop()
-			default:
-				m.Viewport, viewcmd = m.Viewport.Update(msg)
+			// Handle viewport scrolling in layout system
+			if m.Layout != nil {
+				activePane := m.Layout.GetActivePane()
+				if activePane != nil {
+					var viewcmd tea.Cmd
+					switch k {
+					case "end":
+						activePane.Viewport.GotoBottom()
+					case "home":
+						activePane.Viewport.GotoTop()
+					default:
+						activePane.Viewport, viewcmd = activePane.Viewport.Update(msg)
+					}
+					cmds = append(cmds, viewcmd)
+				}
 			}
-
-			cmds = append(cmds, viewcmd)
-		} else if k := msg.String(); k == "f2" {
-			m.ToggleSideBar("left")
-		} else if k := msg.String(); k == "f3" {
-			m.ToggleSideBar("right")
 		} else if k := msg.String(); k == "enter" {
 			m.Input.Placeholder = ""
 			order := strings.TrimSpace(m.Input.Value())
-			log.Printf("DEBUG main.go: Calling HandleInput with: %q", order)
+			
+			// Check for layout commands
+			if strings.HasPrefix(order, "#") {
+				cmdParts := strings.Fields(order[1:])
+				if len(cmdParts) > 0 {
+					cmdName := strings.ToLower(cmdParts[0])
+					if cmdName == "split" || cmdName == "unsplit" || cmdName == "panes" || cmdName == "pane" || cmdName == "focus" {
+						// Parse and handle layout command
+						m.handleLayoutCommandFromString(order)
+					}
+				}
+			}
+			
 			m.SessionHandler.ActiveSession().HandleInput(order)
 			m.Input.SetValue("")
 		} else {
@@ -231,76 +227,34 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		//headerHeight := lipgloss.Height(m.headerView())
 		footerHeight := 2
-		//verticalMarginHeight := headerHeight + footerHeight
 		verticalMarginHeight := footerHeight
 
-		if !m.Ready {
-			// Since this program is using the full size of the viewport we
-			// need to wait until we've received the window dimensions before
-			// we can initialize the viewport. The initial dimensions come in
-			// quickly, though asynchronously, which is why we wait for them
-			// here.
-			width := msg.Width
-			if m.LeftSideBarActive {
-				width -= LeftSideBarSize
+		// Initialize or update layout system
+		if m.Layout == nil {
+			m.Layout = layout.NewLayout("main")
+			mainPane := m.Layout.FindPane("main")
+			if mainPane != nil {
+				mainPane.Viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
+				mainPane.Viewport.HighPerformanceRendering = useHighPerformanceRenderer
+				mainPane.Viewport.SetContent(session.Motd())
 			}
-			if m.RightSideBarActive {
-				width -= RightSideBarSize
-			}
-
-			m.Viewport = viewport.New(width, msg.Height-verticalMarginHeight)
-			m.Viewport.YPosition = 0
-			m.Viewport.HighPerformanceRendering = useHighPerformanceRenderer
-			m.Viewport.SetContent(session.Motd())
 			m.Ready = true
 
-			m.LeftSideBar = viewport.New(LeftSideBarSize, msg.Height-verticalMarginHeight)
-			m.LeftSideBar.YPosition = 0
-			m.LeftSideBar.HighPerformanceRendering = useHighPerformanceRenderer
-			m.LeftSideBar.SetContent("LEFT")
-
-			m.RightSideBar = viewport.New(RightSideBarSize, msg.Height-verticalMarginHeight)
-			m.RightSideBar.YPosition = 0
-			m.RightSideBar.HighPerformanceRendering = useHighPerformanceRenderer
-			m.RightSideBar.SetContent("RIGHT")
-
-			m.Input.Cursor.BlinkSpeed = 500 * time.Millisecond
-			// This is only necessary for high performance rendering, which in
-			// most cases you won't need.
-			//
-			// Render the viewport one line below the header.
-			//m.viewport.YPosition = headerHeight + 1
-		} else {
-			width := msg.Width
-			if m.LeftSideBarActive {
-				width -= LeftSideBarSize
-			}
-			if m.RightSideBarActive {
-				width -= RightSideBarSize
-			}
-
-			m.Viewport.Width = width
-
-			m.Viewport.Height = msg.Height - verticalMarginHeight
-			m.LeftSideBar.Width = LeftSideBarSize
-			m.LeftSideBar.SetContent("LEFT")
-			m.LeftSideBar.Height = msg.Height - verticalMarginHeight
-
-			m.RightSideBar.Width = RightSideBarSize
-			if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
-				tp, err := k.Plugin.Lookup("MakeMap")
-				if err == nil {
-					m.RightSideBar.SetContent(tp.(func(*session.Session, int, int) string)(m.SessionHandler.ActiveSession(), RightSideBarSize, 20))
-				} else {
-					m.RightSideBar.SetContent("Lookup failure")
-				}
-			}
-
-			m.RightSideBar.Height = msg.Height - verticalMarginHeight
-
+			// Auto-create map pane if kallisti plugin is active
+			m.ensureMapPane()
 		}
+
+		m.Layout.SetSize(msg.Width, msg.Height-verticalMarginHeight)
+		// Update all panes' viewport sizes
+		for _, pane := range m.Layout.GetAllPanes() {
+			if pane.Viewport.Width > 0 && pane.Viewport.Height > 0 {
+				pane.Viewport.Width = pane.Width
+				pane.Viewport.Height = pane.Height
+			}
+		}
+
+		m.Input.Cursor.BlinkSpeed = 500 * time.Millisecond
 
 		m.StatusBar.Height = 1
 		m.StatusBar.SetSize(msg.Width)
@@ -315,17 +269,11 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Input.Width = msg.Width - 1
 
 		if useHighPerformanceRenderer {
-			// Render (or re-render) the whole viewport. Necessary both to
-			// initialize the viewport and when the window is resized.
-			//
-			// This is needed for high-performance rendering only.
-			cmds = append(cmds, viewport.Sync(m.Viewport))
-			if m.LeftSideBarActive {
-				cmds = append(cmds, viewport.Sync(m.LeftSideBar))
-			}
-
-			if m.RightSideBarActive {
-				cmds = append(cmds, viewport.Sync(m.RightSideBar))
+			// Sync all panes' viewports
+			for _, pane := range m.Layout.GetAllPanes() {
+				if pane.Viewport.Width > 0 && pane.Viewport.Height > 0 {
+					cmds = append(cmds, viewport.Sync(pane.Viewport))
+				}
 			}
 		}
 
@@ -334,6 +282,210 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// handleLayoutCommand processes layout command messages
+func (m *ZifModel) handleLayoutCommand(msg layout.LayoutCommandMsg) {
+	if m.Layout == nil {
+		m.Layout = layout.NewLayout("main")
+	}
+
+	// Cast session from interface{} to *session.Session
+	s, ok := msg.Session.(*session.Session)
+	if !ok {
+		log.Printf("Invalid session type in layout command")
+		return
+	}
+
+	switch msg.Command {
+	case "split":
+		if len(msg.Args) < 5 {
+			s.Output("Invalid split command\n")
+			return
+		}
+		paneID := msg.Args[0]
+		newPaneID := msg.Args[1]
+		directionStr := msg.Args[2]
+		splitPercentStr := msg.Args[3]
+		paneTypeStr := msg.Args[4]
+
+		var direction layout.SplitDirection
+		if directionStr == "horizontal" {
+			direction = layout.SplitHorizontal
+		} else {
+			direction = layout.SplitVertical
+		}
+
+		splitPercent, err := strconv.Atoi(splitPercentStr)
+		if err != nil {
+			s.Output(fmt.Sprintf("Invalid split percentage: %s\n", splitPercentStr))
+			return
+		}
+
+		paneType := layout.ParsePaneType(paneTypeStr)
+
+		err = m.Layout.Split(paneID, direction, splitPercent, newPaneID, paneType)
+		if err != nil {
+			s.Output(fmt.Sprintf("Error splitting pane: %v\n", err))
+			return
+		}
+
+		// Initialize the new pane's viewport
+		newPane := m.Layout.FindPane(newPaneID)
+		if newPane != nil {
+			newPane.Viewport = viewport.New(0, 0)
+			newPane.Viewport.HighPerformanceRendering = useHighPerformanceRenderer
+			newPane.Title = string(paneType)
+		}
+
+		s.Output(fmt.Sprintf("Split pane %s, created %s\n", paneID, newPaneID))
+
+	case "unsplit":
+		if len(msg.Args) < 1 {
+			s.Output("Invalid unsplit command\n")
+			return
+		}
+		paneID := msg.Args[0]
+		err := m.Layout.Unsplit(paneID)
+		if err != nil {
+			s.Output(fmt.Sprintf("Error unsplitting pane: %v\n", err))
+			return
+		}
+		s.Output(fmt.Sprintf("Removed pane %s\n", paneID))
+
+	case "list":
+		list := m.Layout.ListPanes()
+		s.Output(list + "\n")
+
+	case "info":
+		if len(msg.Args) < 1 {
+			s.Output("Usage: #pane [pane_id]\n")
+			return
+		}
+		paneID := msg.Args[0]
+		info := m.Layout.GetPaneInfo(paneID)
+		s.Output(info + "\n")
+
+	case "focus":
+		if len(msg.Args) < 1 {
+			s.Output("Usage: #focus [pane_id]\n")
+			return
+		}
+		paneID := msg.Args[0]
+		err := m.Layout.SetActivePane(paneID)
+		if err != nil {
+			s.Output(fmt.Sprintf("Error focusing pane: %v\n", err))
+			return
+		}
+		s.Output(fmt.Sprintf("Focused pane %s\n", paneID))
+	}
+}
+
+// handleLayoutCommandFromString parses a command string and handles layout commands
+func (m *ZifModel) handleLayoutCommandFromString(cmd string) {
+	// Layout commands are now handled directly in session/commands.go
+	// This function is kept for potential future use
+}
+
+// ensureMapPane creates a map pane if kallisti plugin is active and map pane doesn't exist
+func (m *ZifModel) ensureMapPane() {
+	if m.Layout == nil {
+		return
+	}
+
+	// Check if map pane already exists
+	mapPane := m.Layout.FindPane("map")
+	if mapPane != nil {
+		return
+	}
+
+	// Check if kallisti plugin is active
+	if _, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; !ok {
+		return
+	}
+
+	// Split main pane horizontally to add map pane on the right (30% for map, 70% for main)
+	err := m.Layout.Split("main", layout.SplitHorizontal, 70, "map", layout.PaneTypeSidebar)
+	if err != nil {
+		log.Printf("Error creating map pane: %v", err)
+		return
+	}
+
+	// Get the map pane and set it up
+	mapPane = m.Layout.FindPane("map")
+	if mapPane != nil {
+		mapPane.Viewport = viewport.New(0, 0)
+		mapPane.Viewport.HighPerformanceRendering = useHighPerformanceRenderer
+		mapPane.Title = "Map"
+		mapPane.MinWidth = 30
+		// Set custom render function to display map content
+		mapPane.RenderFunc = func(p *layout.Pane, width, height int) string {
+			if p.Content != "" {
+				// Use viewport for scrolling if content is large
+				if p.Viewport.Width > 0 && p.Viewport.Height > 0 {
+					p.Viewport.SetContent(p.Content)
+					content := p.Viewport.View()
+					if p.Title != "" {
+						titleBar := lipgloss.NewStyle().
+							Width(width).
+							Border(lipgloss.NormalBorder()).
+							BorderBottom(false).
+							Render(p.Title)
+						return lipgloss.JoinVertical(lipgloss.Top, titleBar, content)
+					}
+					return content
+				}
+				// Simple content display
+				return p.Content
+			}
+			return "Map (loading...)"
+		}
+	}
+}
+
+// updateMapPane updates the map pane content if kallisti plugin is active
+func (m *ZifModel) updateMapPane() {
+	if m.Layout == nil {
+		return
+	}
+
+	mapPane := m.Layout.FindPane("map")
+	if mapPane == nil {
+		// Try to create it if it doesn't exist
+		m.ensureMapPane()
+		mapPane = m.Layout.FindPane("map")
+		if mapPane == nil {
+			return
+		}
+	}
+
+	// Ensure viewport is properly sized
+	if mapPane.Viewport.Width != mapPane.Width || mapPane.Viewport.Height != mapPane.Height {
+		mapPane.Viewport.Width = mapPane.Width
+		mapPane.Viewport.Height = mapPane.Height
+	}
+
+	// Check if kallisti plugin is active and session is connected
+	if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
+		if m.SessionHandler.ActiveSession().Connected {
+			tp, err := k.Plugin.Lookup("MakeMap")
+			if err == nil {
+				// Calculate map size based on pane dimensions
+				mapWidth := mapPane.Width
+				if mapWidth < 10 {
+					mapWidth = 50 // Default size
+				}
+				mapHeight := mapPane.Height
+				if mapHeight < 5 {
+					mapHeight = 20 // Default size
+				}
+
+				mapContent := tp.(func(*session.Session, int, int) string)(
+					m.SessionHandler.ActiveSession(), mapWidth, mapHeight)
+				mapPane.Content = mapContent
+			}
+		}
+	}
 }
 
 func main() {

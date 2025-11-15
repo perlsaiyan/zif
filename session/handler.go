@@ -48,7 +48,6 @@ type Session struct {
 
 // HandleInput processes the input command.
 func (s *Session) HandleInput(cmd string) {
-	log.Printf("DEBUG HandleInput called with: %q, PasswordMode: %v", cmd, s.PasswordMode)
 	if cmd == "" {
 		if s.Connected {
 			s.Socket.Write([]byte("\n"))
@@ -63,9 +62,7 @@ func (s *Session) HandleInput(cmd string) {
 		// Format 2: Bright white (8-bit color)
 		// Using both: set bright white, then RGB as fallback
 		coloredCmd := "\x1b[1;37m" + cmd + "\x1b[0m\n" // Bright white: \x1b[1;37m
-		log.Printf("DEBUG: Outputting colored command: %q", coloredCmd)
 		s.Output(coloredCmd)
-		log.Printf("DEBUG: Content after output: %q", s.Content[len(s.Content)-50:])
 	}
 
 	// Check for aliases first (before internal commands)

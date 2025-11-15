@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
+	"github.com/perlsaiyan/zif/layout"
 )
 
 type CommandFunction func(*Session, string)
@@ -27,11 +29,16 @@ var internalCommands = []Command{
 	{"help", CmdHelp},
 	{Name: "modules", Fn: CmdModules},
 	{Name: "msdp", Fn: CmdMSDP},
+	{Name: "pane", Fn: nil}, // Layout command, handled separately
+	{Name: "panes", Fn: nil}, // Layout command, handled separately
 	{Name: "plugins", Fn: CmdPlugins},
 	{Name: "queue", Fn: CmdQueue},
 	{Name: "ringtest", Fn: CmdRingtest},
 	{Name: "session", Fn: CmdSession},
 	{Name: "sessions", Fn: CmdSessions},
+	{Name: "split", Fn: nil}, // Layout command, handled separately
+	{Name: "unsplit", Fn: nil}, // Layout command, handled separately
+	{Name: "focus", Fn: nil}, // Layout command, handled separately
 	{Name: "test", Fn: CmdTestTicker},
 	{Name: "tickers", Fn: CmdTickers},
 }
@@ -39,13 +46,18 @@ var internalCommands = []Command{
 var internalCommandHelp = map[string]string{
 	"aliases":  "Show aliases",
 	"cancel":   "Cancel test for timers",
+	"focus":    "Set active pane: #focus <pane_id>",
 	"help":     "This help command",
 	"modules":  "Show modules or enable/disable: #modules [enable|disable] <name>",
 	"msdp":     "Show MSDP values",
+	"pane":     "Show pane info: #pane <pane_id>",
+	"panes":    "List all panes",
 	"session":  "Usage: #session <name> <host:port>",
 	"sessions": "Show current sessions",
+	"split":    "Split pane: #split [h|v] [pane_id] [type] [percent]",
 	"test":     "Just a test command/playground",
 	"tickers":  "Show tickers",
+	"unsplit":  "Remove pane: #unsplit <pane_id>",
 }
 
 func (s *Session) AddCommand(c Command, help string) {
@@ -364,8 +376,36 @@ func (s *Session) ParseInternalCommand(cmd string) {
 	parsed := strings.Fields(cmd[1:])
 	args := strings.SplitN(cmd, " ", 2)
 
+	// Handle layout commands first (they're handled in main.go via messages)
+	cmdName := strings.ToLower(parsed[0])
+	if cmdName == "split" {
+		CmdLayoutSplit(s, strings.Join(parsed[1:], " "))
+		s.Sub <- UpdateMessage{Session: s.Name}
+		return
+	} else if cmdName == "unsplit" {
+		CmdLayoutUnsplit(s, strings.Join(parsed[1:], " "))
+		s.Sub <- UpdateMessage{Session: s.Name}
+		return
+	} else if cmdName == "panes" {
+		CmdLayoutPanes(s, "")
+		s.Sub <- UpdateMessage{Session: s.Name}
+		return
+	} else if cmdName == "pane" {
+		CmdLayoutPaneInfo(s, strings.Join(parsed[1:], " "))
+		s.Sub <- UpdateMessage{Session: s.Name}
+		return
+	} else if cmdName == "focus" {
+		CmdLayoutFocus(s, strings.Join(parsed[1:], " "))
+		s.Sub <- UpdateMessage{Session: s.Name}
+		return
+	}
+
 	for lookup := range internalCommands {
-		if strings.HasPrefix(internalCommands[lookup].Name, strings.ToLower(parsed[0])) {
+		if strings.HasPrefix(internalCommands[lookup].Name, cmdName) {
+			if internalCommands[lookup].Fn == nil {
+				// Layout command, skip
+				continue
+			}
 			if len(args) < 2 {
 				internalCommands[lookup].Fn(s, "")
 				s.Sub <- UpdateMessage{Session: s.Name}
@@ -378,6 +418,138 @@ func (s *Session) ParseInternalCommand(cmd string) {
 		}
 	}
 	s.Sub <- UpdateMessage{Session: s.Name}
+}
+
+// Layout command functions
+
+func CmdLayoutSplit(s *Session, cmd string) {
+	fields := strings.Fields(cmd)
+	if len(fields) < 1 {
+		s.Output("Usage: #split [h|v] [pane_id] [type] [split_percent]\n")
+		s.Output("  h = horizontal (left/right), v = vertical (top/bottom)\n")
+		s.Output("  pane_id = ID of pane to split (default: active pane)\n")
+		s.Output("  type = viewport|comms|sidebar|graph (default: sidebar)\n")
+		s.Output("  split_percent = 5-95 (default: 50)\n")
+		s.Output("Example: #split h main comms 30\n")
+		return
+	}
+
+	directionStr := strings.ToLower(fields[0])
+	var direction layout.SplitDirection
+	if directionStr == "h" || directionStr == "horizontal" {
+		direction = layout.SplitHorizontal
+	} else if directionStr == "v" || directionStr == "vertical" {
+		direction = layout.SplitVertical
+	} else {
+		s.Output("Direction must be 'h' (horizontal) or 'v' (vertical)\n")
+		return
+	}
+
+	paneID := "main"
+	paneType := layout.PaneTypeSidebar
+	splitPercent := 50
+
+	if len(fields) >= 2 {
+		paneID = fields[1]
+	}
+	if len(fields) >= 3 {
+		paneType = layout.ParsePaneType(fields[2])
+	}
+	if len(fields) >= 4 {
+		percent, err := strconv.Atoi(fields[3])
+		if err != nil || percent < 5 || percent > 95 {
+			s.Output("Split percentage must be between 5 and 95\n")
+			return
+		}
+		splitPercent = percent
+	}
+
+	// Generate new pane ID
+	newPaneID := layout.GeneratePaneID(string(paneType))
+
+	s.Output(fmt.Sprintf("Splitting pane %s %s at %d%%\n", paneID, direction, splitPercent))
+
+	// Send layout command message
+	s.Sub <- layout.LayoutCommandMsg{
+		Command: "split",
+		Args:    []string{paneID, newPaneID, string(direction), fmt.Sprintf("%d", splitPercent), string(paneType)},
+		Session: s,
+	}
+}
+
+func CmdLayoutUnsplit(s *Session, cmd string) {
+	fields := strings.Fields(cmd)
+	paneID := ""
+
+	if len(fields) >= 1 {
+		paneID = fields[0]
+	}
+
+	if paneID == "" {
+		s.Output("Usage: #unsplit [pane_id]\n")
+		s.Output("  Removes the specified pane and merges its space\n")
+		return
+	}
+
+	s.Output(fmt.Sprintf("Removing pane %s\n", paneID))
+
+	s.Sub <- layout.LayoutCommandMsg{
+		Command: "unsplit",
+		Args:    []string{paneID},
+		Session: s,
+	}
+}
+
+func CmdLayoutPanes(s *Session, cmd string) {
+	s.Sub <- layout.LayoutCommandMsg{
+		Command: "list",
+		Args:    []string{},
+		Session: s,
+	}
+}
+
+func CmdLayoutPaneInfo(s *Session, cmd string) {
+	fields := strings.Fields(cmd)
+	paneID := ""
+
+	if len(fields) >= 1 {
+		paneID = fields[0]
+	}
+
+	if paneID == "" {
+		s.Output("Usage: #pane [pane_id]\n")
+		s.Output("  Shows information about a specific pane\n")
+		return
+	}
+
+	s.Sub <- layout.LayoutCommandMsg{
+		Command: "info",
+		Args:    []string{paneID},
+		Session: s,
+	}
+}
+
+func CmdLayoutFocus(s *Session, cmd string) {
+	fields := strings.Fields(cmd)
+	paneID := ""
+
+	if len(fields) >= 1 {
+		paneID = fields[0]
+	}
+
+	if paneID == "" {
+		s.Output("Usage: #focus [pane_id]\n")
+		s.Output("  Sets the active pane\n")
+		return
+	}
+
+	s.Output(fmt.Sprintf("Focusing pane %s\n", paneID))
+
+	s.Sub <- layout.LayoutCommandMsg{
+		Command: "focus",
+		Args:    []string{paneID},
+		Session: s,
+	}
 }
 
 func (s *Session) ParseCommand(cmd string) {

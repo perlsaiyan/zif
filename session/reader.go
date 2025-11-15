@@ -135,7 +135,7 @@ func (s *Session) mudReader() tea.Cmd {
 					}
 					sb = append(sb, buffer...)
 				}
-				log.Printf("Good SB: %v", sb)
+				// Good SB: MSDP subnegotiation received
 				switch sb[0] {
 				case 69:
 					s.MSDP.HandleSB(s.Socket, sb)
