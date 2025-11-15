@@ -100,6 +100,51 @@ Zif provides several built-in commands (prefixed with `#`):
 - `#queue` - Show command queue
 - `#msdp` - Display MSDP data
 
+## Kallisti Plugin
+
+The Kallisti plugin provides enhanced features for playing Legends of Kallisti MUD. It includes automatic map display, room tracking, pathfinding, and automated travel.
+
+### Installation
+
+Build the plugin:
+```bash
+go build --buildmode=plugin ./plugins/kallisti
+```
+
+Run Zif with the plugin:
+```bash
+./zif -kallisti
+```
+
+### Features
+
+- **Automatic Map Pane**: When the plugin is active, a map pane is automatically created on the right side of the screen showing your current location and surrounding area
+- **Room Tracking**: Automatically scans and tracks room information as you move
+- **Pathfinding**: Find optimal paths between rooms using `#path <vnum>`
+- **Auto-Travel**: Automatically navigate to a destination room
+- **Room Information**: Display detailed room information with `#room`
+- **Map Display**: Show a text-based map with `#map`
+- **Autoheal/Autobuf**: Automated health and buff management (configurable)
+
+### Commands
+
+- `#room` - Show information about the current room
+- `#path <vnum>` - Find and travel to a room by VNUM
+- `#map` - Display a text-based map in the output window
+
+### Map Pane
+
+The map pane automatically appears when:
+- The kallisti plugin is loaded (`-kallisti` flag)
+- You're connected to a MUD session
+
+The map updates in real-time as you move, showing:
+- Your current location (marked with `@`)
+- Surrounding terrain
+- Room connections
+
+You can remove the map pane with `#unsplit map` or create it manually with `#split h main sidebar 30`.
+
 ## Building
 
 ### Cross compile for Windows
