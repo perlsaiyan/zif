@@ -2,11 +2,40 @@ package session
 
 import (
 	"context"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
+	"github.com/perlsaiyan/zif/config"
 )
+
+// logPanic writes panic information to a panic log file
+func logPanic(location string, panicValue interface{}, stack []byte) {
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		configDir = filepath.Join(os.Getenv("HOME"), ".config", "zif")
+		os.MkdirAll(configDir, 0755)
+	}
+	
+	panicLogPath := filepath.Join(configDir, "panic.log")
+	
+	panicInfo := fmt.Sprintf("=== PANIC at %s ===\nTime: %s\nPanic: %v\n\nStack trace:\n%s\n\n",
+		location, time.Now().Format(time.RFC3339), panicValue, string(stack))
+	
+	// Append to panic log file
+	if f, err := os.OpenFile(panicLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+		fmt.Fprintf(f, panicInfo)
+		f.Close()
+	}
+	
+	// Also log to standard log
+	log.Printf("PANIC in %s: %v\nStack:\n%s", location, panicValue, string(stack))
+}
 
 type TickerRegistry struct {
 	Context context.Context
@@ -34,6 +63,18 @@ func (s *Session) AddTicker(ticker *TickerRecord) {
 }
 
 func SessionTicker(s *Session) {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := debug.Stack()
+			logPanic("SessionTicker", r, stack)
+			
+			errMsg := fmt.Sprintf("PANIC in SessionTicker: %v\n(Check ~/.config/zif/panic.log for details)", r)
+			log.Printf(errMsg)
+			if s != nil {
+				s.Output("\n" + errMsg)
+			}
+		}
+	}()
 
 	s.Output("Launching ticker!!\n")
 	for {
@@ -53,8 +94,11 @@ func SessionTicker(s *Session) {
 					} else if len(v.Command) > 0 {
 						s.Socket.Write([]byte(v.Command + "\n"))
 					}
-					v.NextFire = time.Now().Add(time.Duration(v.Interval) * time.Millisecond)
-					s.Tickers.Entries[k] = v
+					// Check if timer still exists (might have been removed by one-shot timer)
+					if _, exists := s.Tickers.Entries[k]; exists {
+						v.NextFire = time.Now().Add(time.Duration(v.Interval) * time.Millisecond)
+						s.Tickers.Entries[k] = v
+					}
 				}
 			}
 

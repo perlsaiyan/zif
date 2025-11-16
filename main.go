@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"plugin"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +35,7 @@ type ZifModel struct {
 	SessionHandler session.SessionHandler
 	StatusBar      statusbar.Model
 	Ready          bool
+	Error          string // Track panic/error messages
 }
 
 func (m ZifModel) Init() tea.Cmd {
@@ -47,14 +50,27 @@ func (m ZifModel) View() string {
 		return "\n  Initializing..."
 	}
 
+	var content string
 	// Always use new layout system
 	if m.Layout != nil {
-		layoutContent := m.Layout.Render()
-		return lipgloss.JoinVertical(lipgloss.Top, layoutContent, m.Input.View(), m.StatusBar.View())
+		content = m.Layout.Render()
+	} else {
+		// Fallback to single viewport if layout not initialized
+		content = m.Viewport.View()
 	}
 
-	// Fallback to single viewport if layout not initialized
-	return lipgloss.JoinVertical(lipgloss.Top, m.Viewport.View(), m.Input.View(), m.StatusBar.View())
+	// Display error/panic message if present
+	if m.Error != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#ff0000")).
+			Background(lipgloss.Color("#000000")).
+			Padding(0, 1).
+			Bold(true)
+		errorBox := errorStyle.Render("ERROR: " + m.Error)
+		content = lipgloss.JoinVertical(lipgloss.Top, errorBox, content)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Top, content, m.Input.View(), m.StatusBar.View())
 }
 
 // A command that waits for the activity on a channel.
@@ -68,11 +84,50 @@ func waitForActivity(sub chan tea.Msg) tea.Cmd {
 	}
 }
 
+// logPanic writes panic information to a panic log file
+func logPanic(location string, panicValue interface{}, stack []byte) {
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		configDir = filepath.Join(os.Getenv("HOME"), ".config", "zif")
+		os.MkdirAll(configDir, 0755)
+	}
+	
+	panicLogPath := filepath.Join(configDir, "panic.log")
+	
+	panicInfo := fmt.Sprintf("=== PANIC at %s ===\nTime: %s\nPanic: %v\n\nStack trace:\n%s\n\n",
+		location, time.Now().Format(time.RFC3339), panicValue, string(stack))
+	
+	// Append to panic log file
+	if f, err := os.OpenFile(panicLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+		fmt.Fprintf(f, panicInfo)
+		f.Close()
+	}
+	
+	// Also log to standard log
+	log.Printf("PANIC in %s: %v\nStack:\n%s", location, panicValue, string(stack))
+}
+
 func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		//cmd  tea.Cmd
 		cmds []tea.Cmd
 	)
+
+	// Recover from panics in Update
+	defer func() {
+		if r := recover(); r != nil {
+			stack := debug.Stack()
+			logPanic("Update", r, stack)
+			
+			errMsg := fmt.Sprintf("PANIC in Update: %v\n(Check ~/.config/zif/panic.log for details)", r)
+			// Try to output to active session if available
+			if m.SessionHandler.ActiveSession() != nil {
+				m.SessionHandler.ActiveSession().Output("\n" + errMsg)
+			}
+			// Store error in model for display
+			m.Error = errMsg
+		}
+	}()
 
 	//log.Printf("Receiving message: %s", msg)
 	switch msg := msg.(type) {
@@ -491,6 +546,7 @@ func (m *ZifModel) updateMapPane() {
 func main() {
 	var kallistiFlag = flag.Bool("kallisti", false, "Use Kallisti plugin")
 	var helpFlag = flag.Bool("help", false, "Show help")
+	var noAutostartFlag = flag.Bool("no-autostart", false, "Skip auto-loading sessions from sessions.yaml")
 
 	flag.Parse()
 
@@ -513,6 +569,34 @@ func main() {
 	m.Input.Focus()
 	m.Input.CharLimit = 156
 	m.Input.Width = 20
+
+	// Load and auto-start sessions from sessions.yaml (unless --no-autostart flag is set)
+	if !*noAutostartFlag {
+		sessionsConfig, err := config.LoadSessionsConfig()
+		if err != nil {
+			log.Printf("Warning: failed to load sessions config: %v", err)
+		} else {
+			// Auto-start all configured sessions with autostart enabled
+			for _, sessionConfig := range sessionsConfig.Sessions {
+				if sessionConfig.Autostart && sessionConfig.Name != "" && sessionConfig.Address != "" {
+					m.SessionHandler.AddSession(sessionConfig.Name, sessionConfig.Address)
+				}
+			}
+			// Set the first session as active if any sessions were loaded
+			if len(sessionsConfig.Sessions) > 0 && len(m.SessionHandler.Sessions) > 1 {
+				// Find the first successfully created session with autostart enabled (not the default "zif" session)
+				for _, sessionConfig := range sessionsConfig.Sessions {
+					if sessionConfig.Autostart {
+						if _, exists := m.SessionHandler.Sessions[sessionConfig.Name]; exists {
+							m.SessionHandler.Active = sessionConfig.Name
+							m.SessionHandler.Sub <- session.SessionChangeMsg{ActiveSession: m.SessionHandler.ActiveSession()}
+							break
+						}
+					}
+				}
+			}
+		}
+	}
 
 	if *kallistiFlag {
 
@@ -560,6 +644,27 @@ func main() {
 	)
 
 	//go mudReader(m.sub, m.socket, &m)
+
+	// Recover from panics in the main program
+	defer func() {
+		if r := recover(); r != nil {
+			stack := debug.Stack()
+			logPanic("main", r, stack)
+			
+			errMsg := fmt.Sprintf("PANIC in main program: %v\n(Check ~/.config/zif/panic.log for details)", r)
+			// Try to output to active session if available
+			if m.SessionHandler.ActiveSession() != nil {
+				m.SessionHandler.ActiveSession().Output("\n" + errMsg)
+			}
+			// Print to stderr as fallback
+			fmt.Fprintf(os.Stderr, "\n%s\n", errMsg)
+			fmt.Fprintf(os.Stderr, "Stack trace saved to ~/.config/zif/panic.log\n")
+			fmt.Fprintf(os.Stderr, "Press Ctrl+C to exit...\n")
+			// Wait a bit so user can see the error, then exit
+			time.Sleep(5 * time.Second)
+			os.Exit(1)
+		}
+	}()
 
 	if _, err := p.Run(); err != nil {
 		fmt.Println("could not run program:", err)

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"strconv"
+	"sync"
 
 	"github.com/perlsaiyan/zif/protocol/msdp"
 )
@@ -24,6 +25,7 @@ const MSDP_ARRAY_CLOSE = byte(6)
 type MSDPHandler struct {
 	Data map[string]interface{}
 	c    net.Conn
+	mu   sync.RWMutex // Protects Data map from concurrent access
 }
 
 func NewMSDP() *MSDPHandler {
@@ -100,9 +102,11 @@ func (m *MSDPHandler) HandleSB(conn net.Conn, b []byte) {
 	}
 
 	// Merge parsed data into our Data map
+	m.mu.Lock()
 	for k, v := range parsed {
 		m.Data[k] = v
 	}
+	m.mu.Unlock()
 
 	// Handle REPORTABLE_VARIABLES - send REPORT request for all variables
 	// Only send if we actually received REPORTABLE_VARIABLES in this message
@@ -119,6 +123,8 @@ func (m *MSDPHandler) HandleSB(conn net.Conn, b []byte) {
 
 // GetString retrieves a string value from the MSDP data
 func (m *MSDPHandler) GetString(key string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if val, ok := m.Data[key]; ok {
 		switch v := val.(type) {
 		case string:
@@ -135,6 +141,8 @@ func (m *MSDPHandler) GetString(key string) string {
 
 // GetInt retrieves an integer value from the MSDP data
 func (m *MSDPHandler) GetInt(key string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if val, ok := m.Data[key]; ok {
 		switch v := val.(type) {
 		case int:
@@ -153,6 +161,8 @@ func (m *MSDPHandler) GetInt(key string) int {
 // GetBool retrieves a boolean value from the MSDP data
 // Handles "1"/"0" string conversions and actual boolean values
 func (m *MSDPHandler) GetBool(key string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if val, ok := m.Data[key]; ok {
 		switch v := val.(type) {
 		case bool:
@@ -168,6 +178,8 @@ func (m *MSDPHandler) GetBool(key string) bool {
 
 // GetArray retrieves an array value from the MSDP data
 func (m *MSDPHandler) GetArray(key string) []interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if val, ok := m.Data[key]; ok {
 		if arr, ok := val.([]interface{}); ok {
 			return arr
@@ -178,10 +190,24 @@ func (m *MSDPHandler) GetArray(key string) []interface{} {
 
 // GetTable retrieves a table (map) value from the MSDP data
 func (m *MSDPHandler) GetTable(key string) map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if val, ok := m.Data[key]; ok {
 		if table, ok := val.(map[string]interface{}); ok {
 			return table
 		}
 	}
 	return nil
+}
+
+// GetAllData returns a copy of all MSDP data for safe iteration
+func (m *MSDPHandler) GetAllData() map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	// Create a copy to avoid holding the lock during iteration
+	result := make(map[string]interface{}, len(m.Data))
+	for k, v := range m.Data {
+		result[k] = v
+	}
+	return result
 }

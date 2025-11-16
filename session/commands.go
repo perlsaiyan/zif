@@ -177,16 +177,19 @@ func formatMSDPValue(v interface{}, indent int) string {
 }
 
 func CmdMSDP(s *Session, cmd string) {
-	log.Printf("CmdMSDP: Starting, data has %d keys", len(s.MSDP.Data))
+	// Get a safe copy of the data to avoid concurrent access
+	data := s.MSDP.GetAllData()
 	
-	if len(s.MSDP.Data) == 0 {
+	log.Printf("CmdMSDP: Starting, data has %d keys", len(data))
+	
+	if len(data) == 0 {
 		s.Output("No MSDP data available.\n")
 		return
 	}
 
 	// Sort keys for consistent output
-	keys := make([]string, 0, len(s.MSDP.Data))
-	for k := range s.MSDP.Data {
+	keys := make([]string, 0, len(data))
+	for k := range data {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -199,7 +202,7 @@ func CmdMSDP(s *Session, cmd string) {
 	
 	for i, key := range keys {
 		log.Printf("CmdMSDP: Processing key %d/%d: %s", i+1, len(keys), key)
-		value := s.MSDP.Data[key]
+		value := data[key]
 		
 		log.Printf("CmdMSDP: Formatting value for %s", key)
 		formatted := formatMSDPValue(value, 0)

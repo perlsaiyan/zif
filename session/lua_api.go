@@ -1,8 +1,11 @@
 package session
 
 import (
+	"fmt"
 	"log"
 	"regexp"
+	"runtime/debug"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -98,6 +101,15 @@ func (s *Session) RegisterLuaAPI() {
 			Enabled: true,
 			RE:      re,
 			Fn: func(sess *Session, matches ActionMatches) {
+				defer func() {
+					if r := recover(); r != nil {
+						stack := debug.Stack()
+						logPanic(fmt.Sprintf("Lua trigger %s", name), r, stack)
+						if sess != nil {
+							sess.Output(fmt.Sprintf("\nPANIC in Lua trigger %s: %v\n(Check ~/.config/zif/panic.log for details)\n", name, r))
+						}
+					}
+				}()
 				// Call Lua function with matches
 				L := sess.LuaState
 				L.Push(fn)
@@ -155,6 +167,15 @@ func (s *Session) RegisterLuaAPI() {
 			Pattern: pattern,
 			RE:      re,
 			Fn: func(sess *Session, matches []string) {
+				defer func() {
+					if r := recover(); r != nil {
+						stack := debug.Stack()
+						logPanic(fmt.Sprintf("Lua alias %s", name), r, stack)
+						if sess != nil {
+							sess.Output(fmt.Sprintf("\nPANIC in Lua alias %s: %v\n(Check ~/.config/zif/panic.log for details)\n", name, r))
+						}
+					}
+				}()
 				// Call Lua function with matches
 				L := sess.LuaState
 				L.Push(fn)
@@ -202,6 +223,15 @@ func (s *Session) RegisterLuaAPI() {
 			Name:     name,
 			Interval: interval,
 			Fn: func(sess *Session) {
+				defer func() {
+					if r := recover(); r != nil {
+						stack := debug.Stack()
+						logPanic(fmt.Sprintf("Lua timer %s", name), r, stack)
+						if sess != nil {
+							sess.Output(fmt.Sprintf("\nPANIC in Lua timer %s: %v\n(Check ~/.config/zif/panic.log for details)\n", name, r))
+						}
+					}
+				}()
 				// Call Lua function
 				L := sess.LuaState
 				L.Push(fn)
@@ -210,6 +240,98 @@ func (s *Session) RegisterLuaAPI() {
 				}
 			},
 			NextFire: s.Birth.Add(0), // Will be set properly by AddLuaTimer
+			LastFire: s.Birth,
+			Count:    0,
+		}
+
+		s.AddLuaTimer(ticker)
+
+		// Track in module registry
+		if s.Modules != nil {
+			if module, ok := s.Modules.Modules[moduleName]; ok {
+				module.Timers = append(module.Timers, name)
+			}
+		}
+
+		return 0
+	}))
+
+	// session:remove_timer(name)
+	L.SetField(sessionMT, "remove_timer", L.NewFunction(func(L *lua.LState) int {
+		name := L.CheckString(1)
+
+		moduleName := GetCurrentModule(L)
+		if moduleName == "" {
+			L.RaiseError("remove_timer called outside of module context")
+			return 0
+		}
+
+		// Remove timer from registry
+		s.RemoveLuaTimer(name)
+
+		// Remove from module tracking
+		if s.Modules != nil {
+			if module, ok := s.Modules.Modules[moduleName]; ok {
+				for i, timerName := range module.Timers {
+					if timerName == name {
+						// Remove from slice
+						module.Timers = append(module.Timers[:i], module.Timers[i+1:]...)
+						break
+					}
+				}
+			}
+		}
+
+		return 0
+	}))
+
+	// session:add_one_shot_timer(name, delay_ms, func)
+	L.SetField(sessionMT, "add_one_shot_timer", L.NewFunction(func(L *lua.LState) int {
+		name := L.CheckString(1)
+		delay := L.CheckInt(2)
+		fn := L.CheckFunction(3)
+
+		moduleName := GetCurrentModule(L)
+		if moduleName == "" {
+			L.RaiseError("add_one_shot_timer called outside of module context")
+			return 0
+		}
+
+		// Create one-shot timer
+		ticker := &TickerRecord{
+			Name:     name,
+			Interval: delay, // Not used for one-shot, but set for consistency
+			Fn: func(sess *Session) {
+				defer func() {
+					if r := recover(); r != nil {
+						stack := debug.Stack()
+						logPanic(fmt.Sprintf("Lua one-shot timer %s", name), r, stack)
+						if sess != nil {
+							sess.Output(fmt.Sprintf("\nPANIC in Lua one-shot timer %s: %v\n(Check ~/.config/zif/panic.log for details)\n", name, r))
+						}
+					}
+				}()
+				// Call Lua function
+				L := sess.LuaState
+				L.Push(fn)
+				if err := L.PCall(0, 0, nil); err != nil {
+					log.Printf("Error calling Lua one-shot timer %s: %v", name, err)
+				}
+				// Remove timer after firing
+				sess.RemoveLuaTimer(name)
+				// Remove from module tracking
+				if sess.Modules != nil {
+					if module, ok := sess.Modules.Modules[moduleName]; ok {
+						for i, timerName := range module.Timers {
+							if timerName == name {
+								module.Timers = append(module.Timers[:i], module.Timers[i+1:]...)
+								break
+							}
+						}
+					}
+				}
+			},
+			NextFire: time.Now().Add(time.Duration(delay) * time.Millisecond),
 			LastFire: s.Birth,
 			Count:    0,
 		}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -14,6 +15,19 @@ import (
 
 // Read from the MUD stream, parse MSDP, etc
 func (s *Session) mudReader() tea.Cmd {
+	defer func() {
+		if r := recover(); r != nil {
+			stack := debug.Stack()
+			logPanic("mudReader", r, stack)
+			
+			errMsg := fmt.Sprintf("PANIC in mudReader: %v\n(Check ~/.config/zif/panic.log for details)", r)
+			log.Printf(errMsg)
+			if s != nil {
+				s.Output("\n" + errMsg)
+			}
+		}
+	}()
+
 	sub := s.Sub
 	buffer := make([]byte, 1)
 	var outbuf []byte

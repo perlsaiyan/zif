@@ -18,6 +18,12 @@ Build from source:
 go build .
 ```
 
+### Command-Line Flags
+
+- `--kallisti` - Load the Kallisti plugin for Legends of Kallisti MUD
+- `--no-autostart` - Skip auto-loading sessions from `sessions.yaml` at startup
+- `--help` - Show help message
+
 ## Configuration
 
 Zif uses XDG directories for configuration:
@@ -25,6 +31,27 @@ Zif uses XDG directories for configuration:
 - **Global Modules**: `$XDG_CONFIG_HOME/zif/modules/`
 - **Session Configs**: `$XDG_CONFIG_HOME/zif/sessions/<session-name>/`
 - **Session Modules**: `$XDG_CONFIG_HOME/zif/sessions/<session-name>/modules/`
+
+### Auto-Start Sessions
+
+Zif can automatically start MUD sessions at startup by configuring them in `~/.config/zif/sessions.yaml`. This file is automatically created with an empty configuration on first run.
+
+**Configuration Format:**
+```yaml
+sessions:
+  - name: "session1"
+    address: "mud.example.com:4000"
+    autostart: true
+  - name: "session2"
+    address: "another.mud.com:23"
+    autostart: false
+```
+
+- `name`: The session name (required)
+- `address`: The MUD server address in `host:port` format (required)
+- `autostart`: Whether to automatically start this session at launch (default: `false`)
+
+Only sessions with `autostart: true` will be automatically connected when Zif starts. You can skip auto-loading entirely by using the `--no-autostart` command-line flag.
 
 ## Lua Module System
 
