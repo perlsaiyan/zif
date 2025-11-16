@@ -2,8 +2,10 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -81,6 +83,7 @@ func (s *Session) HandleInput(cmd string) {
 }
 
 // ActiveSession returns the currently active session.
+// May return nil if the active session name doesn't exist in the Sessions map.
 func (s *SessionHandler) ActiveSession() *Session {
 	return s.Sessions[s.Active]
 }
@@ -132,7 +135,24 @@ func NewHandler() SessionHandler {
 }
 
 // AddSession adds a new session to the session handler.
-func (s *SessionHandler) AddSession(name, address string) {
+// Returns an error if the session could not be created or connected.
+func (s *SessionHandler) AddSession(name, address string) error {
+	// Validate session name - no spaces, must be non-empty
+	if name == "" {
+		return fmt.Errorf("session name cannot be empty")
+	}
+	if strings.Contains(name, " ") {
+		return fmt.Errorf("session name cannot contain spaces")
+	}
+
+	// Validate address format - should contain : for host:port
+	if address == "" {
+		return fmt.Errorf("address cannot be empty")
+	}
+	if !strings.Contains(address, ":") {
+		return fmt.Errorf("invalid address format: expected host:port")
+	}
+
 	newSession := &Session{
 		Name:  name,
 		Birth: time.Now(),
@@ -158,14 +178,10 @@ func (s *SessionHandler) AddSession(name, address string) {
 	ctx := context.Background()
 	newSession.Context, newSession.Cancel = context.WithCancel(ctx)
 
-	if address == "" {
-		s.ActiveSession().Output("created nil session: " + name + "\n")
-		return
+	// Output to current active session if it exists
+	if activeSess := s.ActiveSession(); activeSess != nil {
+		activeSess.Output("attempt to connect to: " + address + "\n")
 	}
-
-	s.ActiveSession().Output("attempt to connect to: " + address + "\n")
-	s.Active = name
-	s.Sub <- SessionChangeMsg{ActiveSession: s.ActiveSession()}
 
 	var err error
 	newSession.Address = address
@@ -173,7 +189,11 @@ func (s *SessionHandler) AddSession(name, address string) {
 	if err != nil {
 		log.Printf("Error connecting to %s: %v", address, err)
 		delete(s.Sessions, name)
-		return
+		// Output error to current active session if it exists
+		if activeSess := s.ActiveSession(); activeSess != nil {
+			activeSess.Output(fmt.Sprintf("Failed to connect to %s: %v\n", address, err))
+		}
+		return fmt.Errorf("failed to connect to %s: %w", address, err)
 	}
 
 	newSession.Connected = true
@@ -209,6 +229,7 @@ func (s *SessionHandler) AddSession(name, address string) {
 	}
 
 	go newSession.mudReader()
+	return nil
 }
 
 // Motd returns the message of the day.

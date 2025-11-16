@@ -133,77 +133,107 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case session.SessionChangeMsg:
+		// Check if ActiveSession is nil before accessing its fields
+		if msg.ActiveSession == nil {
+			log.Printf("Warning: SessionChangeMsg received with nil ActiveSession")
+			// Try to get a valid active session
+			activeSession := m.SessionHandler.ActiveSession()
+			if activeSession == nil {
+				// No valid session available, keep current state
+				cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
+				return m, tea.Batch(cmds...)
+			}
+			// Use the valid session we found
+			msg.ActiveSession = activeSession
+		}
+
 		log.Printf("Setting active session to %s (test: %s)", msg.ActiveSession.Name, m.SessionHandler.Active)
 		m.SessionHandler.Active = msg.ActiveSession.Name
 
 		m.StatusBar.FirstColumn = m.SessionHandler.Active
-		if m.SessionHandler.ActiveSession().Connected {
-			m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().Address
-		} else {
-			m.StatusBar.SecondColumn = "Not Connected"
-		}
-
-		// Update layout system
-		if m.Layout != nil {
-			mainPane := m.Layout.FindPane("main")
-			if mainPane != nil {
-				mainPane.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
-				mainPane.Viewport.GotoBottom()
-				m.StatusBar.ThirdColumn = fmt.Sprintf("%d", mainPane.Viewport.TotalLineCount())
+		activeSession := m.SessionHandler.ActiveSession()
+		if activeSession != nil {
+			if activeSession.Connected {
+				m.StatusBar.SecondColumn = activeSession.Address
+			} else {
+				m.StatusBar.SecondColumn = "Not Connected"
 			}
-			// Ensure map pane exists if kallisti is active
-			m.ensureMapPane()
+
+			// Update layout system
+			if m.Layout != nil {
+				mainPane := m.Layout.FindPane("main")
+				if mainPane != nil {
+					mainPane.Viewport.SetContent(activeSession.Content)
+					mainPane.Viewport.GotoBottom()
+					m.StatusBar.ThirdColumn = fmt.Sprintf("%d", mainPane.Viewport.TotalLineCount())
+				}
+				// Ensure map pane exists if kallisti is active
+				m.ensureMapPane()
+			}
+		} else {
+			// Fallback if active session is somehow nil
+			m.StatusBar.SecondColumn = "No Session"
+			log.Printf("Warning: ActiveSession() returned nil after setting active to %s", m.SessionHandler.Active)
 		}
 
 		cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
 
 	case session.UpdateMessage:
 		m.StatusBar.FirstColumn = m.SessionHandler.Active
-		if m.SessionHandler.ActiveSession().Connected {
-			roomName := m.SessionHandler.ActiveSession().MSDP.GetString("ROOM_NAME")
-			if len(roomName) > 0 {
-				if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
-					tp, err := k.Plugin.Lookup("TravelProgress")
-					if err == nil {
-						m.StatusBar.SecondColumn = tp.(func(*session.Session) string)(m.SessionHandler.ActiveSession()) +
-							" " + roomName
+		activeSession := m.SessionHandler.ActiveSession()
+		if activeSession != nil {
+			if activeSession.Connected {
+				roomName := activeSession.MSDP.GetString("ROOM_NAME")
+				if len(roomName) > 0 {
+					if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
+						tp, err := k.Plugin.Lookup("TravelProgress")
+						if err == nil {
+							m.StatusBar.SecondColumn = tp.(func(*session.Session) string)(activeSession) +
+								" " + roomName
+						} else {
+							m.StatusBar.SecondColumn = roomName
+						}
 					} else {
 						m.StatusBar.SecondColumn = roomName
 					}
 				} else {
-					m.StatusBar.SecondColumn = roomName
+					m.StatusBar.SecondColumn = activeSession.Address
 				}
 			} else {
-				m.StatusBar.SecondColumn = m.SessionHandler.ActiveSession().Address
+				m.StatusBar.SecondColumn = "Not Connected"
+			}
+
+			// Update content in layout system
+			if m.Layout != nil {
+				// Find the main viewport pane or active pane
+				mainPane := m.Layout.FindPane("main")
+				if mainPane == nil {
+					mainPane = m.Layout.GetActivePane()
+				}
+				if mainPane != nil {
+					jump := mainPane.Viewport.AtBottom()
+					if jump {
+						lines := strings.Split(activeSession.Content, "\n")
+						if len(lines) > 1000 {
+							activeSession.Content = strings.Join(lines[len(lines)-1000:], "\n")
+						}
+					}
+					mainPane.Viewport.SetContent(activeSession.Content)
+					if jump {
+						mainPane.Viewport.GotoBottom()
+					}
+					m.StatusBar.ThirdColumn = fmt.Sprintf("%d", mainPane.Viewport.TotalLineCount())
+				}
+
+				// Update map pane if kallisti plugin is active
+				m.updateMapPane()
 			}
 		} else {
-			m.StatusBar.SecondColumn = "Not Connected"
+			m.StatusBar.SecondColumn = "No Session"
 		}
 
-		// Update content in layout system
+		// Continue with viewport sync even if session is nil
 		if m.Layout != nil {
-			// Find the main viewport pane or active pane
-			mainPane := m.Layout.FindPane("main")
-			if mainPane == nil {
-				mainPane = m.Layout.GetActivePane()
-			}
-			if mainPane != nil {
-				jump := mainPane.Viewport.AtBottom()
-				if jump {
-					lines := strings.Split(m.SessionHandler.ActiveSession().Content, "\n")
-					if len(lines) > 1000 {
-						m.SessionHandler.ActiveSession().Content = strings.Join(lines[len(lines)-1000:], "\n")
-					}
-				}
-				mainPane.Viewport.SetContent(m.SessionHandler.ActiveSession().Content)
-				if jump {
-					mainPane.Viewport.GotoBottom()
-				}
-				m.StatusBar.ThirdColumn = fmt.Sprintf("%d", mainPane.Viewport.TotalLineCount())
-			}
-
-			// Update map pane if kallisti plugin is active
-			m.updateMapPane()
 
 			if useHighPerformanceRenderer {
 				// Sync all panes' viewports
@@ -219,14 +249,17 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case session.TextinputMsg:
 		if msg.Toggle_password {
-			if msg.Password_mode {
-				log.Printf("Turning on password mode\n")
-				m.Input.EchoMode = textinput.EchoPassword
-				m.SessionHandler.ActiveSession().PasswordMode = true
-			} else {
-				log.Printf("Turning off password mode\n")
-				m.Input.EchoMode = textinput.EchoNormal
-				m.SessionHandler.ActiveSession().PasswordMode = false
+			activeSession := m.SessionHandler.ActiveSession()
+			if activeSession != nil {
+				if msg.Password_mode {
+					log.Printf("Turning on password mode\n")
+					m.Input.EchoMode = textinput.EchoPassword
+					activeSession.PasswordMode = true
+				} else {
+					log.Printf("Turning off password mode\n")
+					m.Input.EchoMode = textinput.EchoNormal
+					activeSession.PasswordMode = false
+				}
 			}
 
 			cmds = append(cmds, waitForActivity(m.SessionHandler.Sub))
@@ -273,7 +306,10 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			
-			m.SessionHandler.ActiveSession().HandleInput(order)
+			activeSession := m.SessionHandler.ActiveSession()
+			if activeSession != nil {
+				activeSession.HandleInput(order)
+			}
 			m.Input.SetValue("")
 		} else {
 			var inputcmd tea.Cmd
@@ -313,14 +349,19 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.StatusBar.Height = 1
 		m.StatusBar.SetSize(msg.Width)
+		activeSession := m.SessionHandler.ActiveSession()
 		connected := func() string {
-			if m.SessionHandler.ActiveSession().Connected {
+			if activeSession != nil && activeSession.Connected {
 				return "✓"
 			} else {
 				return "✗"
 			}
 		}
-		m.StatusBar.SetContent(m.SessionHandler.ActiveSession().Name, "Not Connected", "100% Efficient", connected())
+		sessionName := "No Session"
+		if activeSession != nil {
+			sessionName = activeSession.Name
+		}
+		m.StatusBar.SetContent(sessionName, "Not Connected", "100% Efficient", connected())
 		m.Input.Width = msg.Width - 1
 
 		if useHighPerformanceRenderer {
@@ -521,23 +562,26 @@ func (m *ZifModel) updateMapPane() {
 	}
 
 	// Check if kallisti plugin is active and session is connected
-	if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
-		if m.SessionHandler.ActiveSession().Connected {
-			tp, err := k.Plugin.Lookup("MakeMap")
-			if err == nil {
-				// Calculate map size based on pane dimensions
-				mapWidth := mapPane.Width
-				if mapWidth < 10 {
-					mapWidth = 50 // Default size
-				}
-				mapHeight := mapPane.Height
-				if mapHeight < 5 {
-					mapHeight = 20 // Default size
-				}
+	activeSession := m.SessionHandler.ActiveSession()
+	if activeSession != nil {
+		if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
+			if activeSession.Connected {
+				tp, err := k.Plugin.Lookup("MakeMap")
+				if err == nil {
+					// Calculate map size based on pane dimensions
+					mapWidth := mapPane.Width
+					if mapWidth < 10 {
+						mapWidth = 50 // Default size
+					}
+					mapHeight := mapPane.Height
+					if mapHeight < 5 {
+						mapHeight = 20 // Default size
+					}
 
-				mapContent := tp.(func(*session.Session, int, int) string)(
-					m.SessionHandler.ActiveSession(), mapWidth, mapHeight)
-				mapPane.Content = mapContent
+					mapContent := tp.(func(*session.Session, int, int) string)(
+						activeSession, mapWidth, mapHeight)
+					mapPane.Content = mapContent
+				}
 			}
 		}
 	}
@@ -579,7 +623,10 @@ func main() {
 			// Auto-start all configured sessions with autostart enabled
 			for _, sessionConfig := range sessionsConfig.Sessions {
 				if sessionConfig.Autostart && sessionConfig.Name != "" && sessionConfig.Address != "" {
-					m.SessionHandler.AddSession(sessionConfig.Name, sessionConfig.Address)
+					err := m.SessionHandler.AddSession(sessionConfig.Name, sessionConfig.Address)
+					if err != nil {
+						log.Printf("Warning: failed to autostart session %s: %v", sessionConfig.Name, err)
+					}
 				}
 			}
 			// Set the first session as active if any sessions were loaded
@@ -589,7 +636,10 @@ func main() {
 					if sessionConfig.Autostart {
 						if _, exists := m.SessionHandler.Sessions[sessionConfig.Name]; exists {
 							m.SessionHandler.Active = sessionConfig.Name
-							m.SessionHandler.Sub <- session.SessionChangeMsg{ActiveSession: m.SessionHandler.ActiveSession()}
+							activeSession := m.SessionHandler.ActiveSession()
+							if activeSession != nil {
+								m.SessionHandler.Sub <- session.SessionChangeMsg{ActiveSession: activeSession}
+							}
 							break
 						}
 					}
@@ -617,7 +667,10 @@ func main() {
 	}
 
 	if len(m.SessionHandler.Plugins.Plugins) > 0 {
-		m.SessionHandler.ActiveSession().Output("Installed Plugins:\n" + m.SessionHandler.PluginMOTD() + "\n")
+		activeSession := m.SessionHandler.ActiveSession()
+		if activeSession != nil {
+			activeSession.Output("Installed Plugins:\n" + m.SessionHandler.PluginMOTD() + "\n")
+		}
 	}
 
 	m.StatusBar = statusbar.New(statusbar.ColorConfig{

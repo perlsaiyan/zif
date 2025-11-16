@@ -250,20 +250,58 @@ func CmdSession(s *Session, cmd string) {
 		s.Output("Usage: #session <name> <address:port>" + "\n")
 		return
 	} else if len(fields) == 1 {
-		_, ok := h.Sessions[fields[0]]
-		if ok {
-			h.Active = fields[0]
-			s.Sub <- SessionChangeMsg{ActiveSession: h.ActiveSession()}
-
+		// Switch to existing session
+		sessionName := fields[0]
+		if _, ok := h.Sessions[sessionName]; ok {
+			h.Active = sessionName
+			activeSession := h.ActiveSession()
+			if activeSession != nil {
+				s.Sub <- SessionChangeMsg{ActiveSession: activeSession}
+			} else {
+				s.Output("Error: Could not activate session.\n")
+			}
 		} else {
-			s.Output("Invalid session.\n")
+			s.Output(fmt.Sprintf("Invalid session: %s\n", sessionName))
 		}
 	} else if len(fields) == 2 {
-		h.AddSession(fields[0], fields[1])
-		h.Active = fields[0]
-		s.Sub <- SessionChangeMsg{ActiveSession: h.ActiveSession()}
+		// Create new session
+		sessionName := fields[0]
+		address := fields[1]
+		
+		// Validate session name format
+		if strings.Contains(sessionName, " ") {
+			s.Output("Error: Session name cannot contain spaces.\n")
+			return
+		}
+		if sessionName == "" {
+			s.Output("Error: Session name cannot be empty.\n")
+			return
+		}
+		
+		// Try to add the session
+		err := h.AddSession(sessionName, address)
+		if err != nil {
+			s.Output(fmt.Sprintf("Error creating session: %v\n", err))
+			return
+		}
+		
+		// Verify the session was created successfully
+		activeSession := h.ActiveSession()
+		if activeSession == nil {
+			s.Output("Error: Session was created but could not be activated.\n")
+			return
+		}
+		
+		// Only set active and send change message if session exists
+		h.Active = sessionName
+		s.Sub <- SessionChangeMsg{ActiveSession: activeSession}
 	} else {
-		h.ActiveSession().Output("Usage: #session <name> <address:port>" + "\n")
+		// Too many arguments
+		if activeSess := h.ActiveSession(); activeSess != nil {
+			activeSess.Output("Usage: #session <name> <address:port>" + "\n")
+		} else {
+			s.Output("Usage: #session <name> <address:port>" + "\n")
+		}
 	}
 
 }
