@@ -89,11 +89,11 @@ func SessionTicker(s *Session) {
 				if v.NextFire.Before(time.Now()) {
 					v.LastFire = time.Now()
 					//log.Printf("Firing ticker " + v.Name + "\n")
-					if v.Fn != nil {
-						v.Fn(s)
-					} else if len(v.Command) > 0 {
-						s.Socket.Write([]byte(v.Command + "\n"))
-					}
+				if v.Fn != nil {
+					v.Fn(s)
+				} else if len(v.Command) > 0 {
+					s.Socket.Write([]byte(v.Command + LineTerminator))
+				}
 					// Check if timer still exists (might have been removed by one-shot timer)
 					if _, exists := s.Tickers.Entries[k]; exists {
 						v.NextFire = time.Now().Add(time.Duration(v.Interval) * time.Millisecond)

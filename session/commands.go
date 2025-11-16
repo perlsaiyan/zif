@@ -561,7 +561,7 @@ func (s *Session) ParseCommand(cmd string) {
 
 	// TODO: We'll want to check this for aliases and/or variables
 	if s.Connected {
-		s.Socket.Write([]byte(cmd + "\n"))
+		s.Socket.Write([]byte(cmd + LineTerminator))
 	}
 
 	// No need to send UpdateMessage here - Output() already sent one with the colored command

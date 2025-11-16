@@ -12,6 +12,9 @@ import (
 	kallisti "github.com/perlsaiyan/zif/protocol"
 )
 
+// LineTerminator is the RFC 854 (Telnet) standard line terminator: CR LF
+const LineTerminator = "\r\n"
+
 type SessionHandler struct {
 	Active   string
 	Sessions map[string]*Session
@@ -50,7 +53,7 @@ type Session struct {
 func (s *Session) HandleInput(cmd string) {
 	if cmd == "" {
 		if s.Connected {
-			s.Socket.Write([]byte("\n"))
+			s.Socket.Write([]byte(LineTerminator))
 		}
 		return
 	}
@@ -73,7 +76,7 @@ func (s *Session) HandleInput(cmd string) {
 	if cmd[0] == '#' {
 		s.ParseInternalCommand(cmd)
 	} else {
-		s.ParseCommand(cmd + "\n")
+		s.ParseCommand(cmd)
 	}
 }
 

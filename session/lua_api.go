@@ -39,7 +39,7 @@ func (s *Session) RegisterLuaAPI() {
 	L.SetField(sessionMT, "send", L.NewFunction(func(L *lua.LState) int {
 		command := L.CheckString(1)
 		if s.Connected && s.Socket != nil {
-			s.Socket.Write([]byte(command + "\n"))
+			s.Socket.Write([]byte(command + LineTerminator))
 		}
 		return 0
 	}))
