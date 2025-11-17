@@ -54,9 +54,12 @@ func (m ZifModel) View() string {
 	// Always use new layout system
 	if m.Layout != nil {
 		content = m.Layout.Render()
-	} else {
-		// Fallback to single viewport if layout not initialized
+	} else if m.Viewport.Width > 0 && m.Viewport.Height > 0 {
+		// Fallback to single viewport if layout not initialized and viewport is ready
 		content = m.Viewport.View()
+	} else {
+		// Both layout and viewport are uninitialized
+		content = "\n  Waiting for window size..."
 	}
 
 	// Display error/panic message if present
@@ -91,18 +94,18 @@ func logPanic(location string, panicValue interface{}, stack []byte) {
 		configDir = filepath.Join(os.Getenv("HOME"), ".config", "zif")
 		os.MkdirAll(configDir, 0755)
 	}
-	
+
 	panicLogPath := filepath.Join(configDir, "panic.log")
-	
+
 	panicInfo := fmt.Sprintf("=== PANIC at %s ===\nTime: %s\nPanic: %v\n\nStack trace:\n%s\n\n",
 		location, time.Now().Format(time.RFC3339), panicValue, string(stack))
-	
+
 	// Append to panic log file
 	if f, err := os.OpenFile(panicLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
 		fmt.Fprintf(f, panicInfo)
 		f.Close()
 	}
-	
+
 	// Also log to standard log
 	log.Printf("PANIC in %s: %v\nStack:\n%s", location, panicValue, string(stack))
 }
@@ -118,7 +121,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if r := recover(); r != nil {
 			stack := debug.Stack()
 			logPanic("Update", r, stack)
-			
+
 			errMsg := fmt.Sprintf("PANIC in Update: %v\n(Check ~/.config/zif/panic.log for details)", r)
 			// Try to output to active session if available
 			if m.SessionHandler.ActiveSession() != nil {
@@ -293,7 +296,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if k := msg.String(); k == "enter" {
 			m.Input.Placeholder = ""
 			order := strings.TrimSpace(m.Input.Value())
-			
+
 			// Check for layout commands
 			if strings.HasPrefix(order, "#") {
 				cmdParts := strings.Fields(order[1:])
@@ -305,7 +308,7 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			
+
 			activeSession := m.SessionHandler.ActiveSession()
 			if activeSession != nil {
 				activeSession.HandleInput(order)
@@ -703,7 +706,7 @@ func main() {
 		if r := recover(); r != nil {
 			stack := debug.Stack()
 			logPanic("main", r, stack)
-			
+
 			errMsg := fmt.Sprintf("PANIC in main program: %v\n(Check ~/.config/zif/panic.log for details)", r)
 			// Try to output to active session if available
 			if m.SessionHandler.ActiveSession() != nil {
