@@ -5,8 +5,10 @@ import (
 	"log"
 	"regexp"
 	"runtime/debug"
+	"strings"
 	"time"
 
+	"github.com/perlsaiyan/zif/layout"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -384,6 +386,194 @@ func (s *Session) RegisterLuaAPI() {
 		}
 		L.Push(lua.LString(""))
 		return 1
+	}))
+
+	// Layout control functions
+
+	// session:layout_split(direction, pane_id, pane_type, split_percent)
+	L.SetField(sessionMT, "layout_split", L.NewFunction(func(L *lua.LState) int {
+		directionStr := L.CheckString(1)
+		paneID := "main"
+		paneTypeStr := "sidebar"
+		splitPercent := 50
+
+		if L.GetTop() >= 2 {
+			paneID = L.CheckString(2)
+		}
+		if L.GetTop() >= 3 {
+			paneTypeStr = L.CheckString(3)
+		}
+		if L.GetTop() >= 4 {
+			splitPercent = L.CheckInt(4)
+		}
+
+		// Validate direction
+		directionStr = strings.ToLower(directionStr)
+		var direction layout.SplitDirection
+		if directionStr == "h" || directionStr == "horizontal" {
+			direction = layout.SplitHorizontal
+		} else if directionStr == "v" || directionStr == "vertical" {
+			direction = layout.SplitVertical
+		} else {
+			L.RaiseError("direction must be 'h' (horizontal) or 'v' (vertical)")
+			return 0
+		}
+
+		// Validate split percentage
+		if splitPercent < 5 || splitPercent > 95 {
+			L.RaiseError("split percentage must be between 5 and 95")
+			return 0
+		}
+
+		// Parse pane type
+		paneType := layout.ParsePaneType(paneTypeStr)
+
+		// Generate new pane ID
+		newPaneID := layout.GeneratePaneID(string(paneType))
+
+		// Send layout command message
+		// Use Handler's Sub channel to ensure it goes to the main update loop
+		if s.Handler != nil {
+			s.Handler.Sub <- layout.LayoutCommandMsg{
+				Command: "split",
+				Args:    []string{paneID, newPaneID, string(direction), fmt.Sprintf("%d", splitPercent), string(paneType)},
+				Session: s,
+			}
+
+			// Send update message to trigger UI refresh
+			s.Handler.Sub <- UpdateMessage{Session: s.Name}
+		} else {
+			// Fallback to session's Sub channel
+			s.Sub <- layout.LayoutCommandMsg{
+				Command: "split",
+				Args:    []string{paneID, newPaneID, string(direction), fmt.Sprintf("%d", splitPercent), string(paneType)},
+				Session: s,
+			}
+
+			// Send update message to trigger UI refresh
+			s.Sub <- UpdateMessage{Session: s.Name}
+		}
+
+		return 0
+	}))
+
+	// session:layout_unsplit(pane_id)
+	L.SetField(sessionMT, "layout_unsplit", L.NewFunction(func(L *lua.LState) int {
+		paneID := L.CheckString(1)
+
+		// Send layout command message
+		if s.Handler != nil {
+			s.Handler.Sub <- layout.LayoutCommandMsg{
+				Command: "unsplit",
+				Args:    []string{paneID},
+				Session: s,
+			}
+			s.Handler.Sub <- UpdateMessage{Session: s.Name}
+		} else {
+			s.Sub <- layout.LayoutCommandMsg{
+				Command: "unsplit",
+				Args:    []string{paneID},
+				Session: s,
+			}
+			s.Sub <- UpdateMessage{Session: s.Name}
+		}
+
+		return 0
+	}))
+
+	// session:layout_focus(pane_id)
+	L.SetField(sessionMT, "layout_focus", L.NewFunction(func(L *lua.LState) int {
+		paneID := L.CheckString(1)
+
+		// Send layout command message
+		if s.Handler != nil {
+			s.Handler.Sub <- layout.LayoutCommandMsg{
+				Command: "focus",
+				Args:    []string{paneID},
+				Session: s,
+			}
+			s.Handler.Sub <- UpdateMessage{Session: s.Name}
+		} else {
+			s.Sub <- layout.LayoutCommandMsg{
+				Command: "focus",
+				Args:    []string{paneID},
+				Session: s,
+			}
+			s.Sub <- UpdateMessage{Session: s.Name}
+		}
+
+		return 0
+	}))
+
+	// session:layout_list_panes()
+	L.SetField(sessionMT, "layout_list_panes", L.NewFunction(func(L *lua.LState) int {
+		// Send layout command message
+		if s.Handler != nil {
+			s.Handler.Sub <- layout.LayoutCommandMsg{
+				Command: "list",
+				Args:    []string{},
+				Session: s,
+			}
+			s.Handler.Sub <- UpdateMessage{Session: s.Name}
+		} else {
+			s.Sub <- layout.LayoutCommandMsg{
+				Command: "list",
+				Args:    []string{},
+				Session: s,
+			}
+			s.Sub <- UpdateMessage{Session: s.Name}
+		}
+
+		return 0
+	}))
+
+	// session:layout_pane_info(pane_id)
+	L.SetField(sessionMT, "layout_pane_info", L.NewFunction(func(L *lua.LState) int {
+		paneID := L.CheckString(1)
+
+		// Send layout command message
+		if s.Handler != nil {
+			s.Handler.Sub <- layout.LayoutCommandMsg{
+				Command: "info",
+				Args:    []string{paneID},
+				Session: s,
+			}
+			s.Handler.Sub <- UpdateMessage{Session: s.Name}
+		} else {
+			s.Sub <- layout.LayoutCommandMsg{
+				Command: "info",
+				Args:    []string{paneID},
+				Session: s,
+			}
+			s.Sub <- UpdateMessage{Session: s.Name}
+		}
+
+		return 0
+	}))
+
+	// session:layout_set_content(pane_id, content)
+	L.SetField(sessionMT, "layout_set_content", L.NewFunction(func(L *lua.LState) int {
+		paneID := L.CheckString(1)
+		content := L.CheckString(2)
+
+		// Send layout command message
+		if s.Handler != nil {
+			s.Handler.Sub <- layout.LayoutCommandMsg{
+				Command: "set_content",
+				Args:    []string{paneID, content},
+				Session: s,
+			}
+			s.Handler.Sub <- UpdateMessage{Session: s.Name}
+		} else {
+			s.Sub <- layout.LayoutCommandMsg{
+				Command: "set_content",
+				Args:    []string{paneID, content},
+				Session: s,
+			}
+			s.Sub <- UpdateMessage{Session: s.Name}
+		}
+
+		return 0
 	}))
 }
 

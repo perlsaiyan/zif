@@ -477,6 +477,25 @@ func (m *ZifModel) handleLayoutCommand(msg layout.LayoutCommandMsg) {
 			return
 		}
 		s.Output(fmt.Sprintf("Focused pane %s\n", paneID))
+
+	case "set_content":
+		if len(msg.Args) < 2 {
+			s.Output("Invalid set_content command\n")
+			return
+		}
+		paneID := msg.Args[0]
+		content := msg.Args[1]
+		pane := m.Layout.FindPane(paneID)
+		if pane == nil {
+			s.Output(fmt.Sprintf("Pane %s not found\n", paneID))
+			return
+		}
+		// Set content and update viewport if it exists
+		pane.Content = content
+		if pane.Viewport.Width > 0 && pane.Viewport.Height > 0 {
+			pane.Viewport.SetContent(content)
+			pane.Viewport.GotoTop()
+		}
 	}
 }
 
