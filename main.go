@@ -320,6 +320,20 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, inputcmd)
 		}
 
+	case tea.MouseMsg:
+		// Pass mouse events to layout for drag handling
+		if m.Layout != nil {
+			var layoutCmd tea.Cmd
+			layoutCmd = m.Layout.Update(msg)
+			if layoutCmd != nil {
+				cmds = append(cmds, layoutCmd)
+			}
+		}
+		// Also pass to input for potential mouse interactions
+		var inputcmd tea.Cmd
+		m.Input, inputcmd = m.Input.Update(msg)
+		cmds = append(cmds, inputcmd)
+
 	case tea.WindowSizeMsg:
 		footerHeight := 2
 		verticalMarginHeight := footerHeight
@@ -340,11 +354,20 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.Layout.SetSize(msg.Width, msg.Height-verticalMarginHeight)
-		// Update all panes' viewport sizes
+		// Update all panes' viewport sizes (accounting for actual borders)
 		for _, pane := range m.Layout.GetAllPanes() {
 			if pane.Viewport.Width > 0 && pane.Viewport.Height > 0 {
-				pane.Viewport.Width = pane.Width
-				pane.Viewport.Height = pane.Height
+				widthReduction, heightReduction := pane.CalculateBorderReduction()
+				viewportWidth := pane.Width - widthReduction
+				viewportHeight := pane.Height - heightReduction
+				if viewportWidth < 0 {
+					viewportWidth = 0
+				}
+				if viewportHeight < 0 {
+					viewportHeight = 0
+				}
+				pane.Viewport.Width = viewportWidth
+				pane.Viewport.Height = viewportHeight
 			}
 		}
 
@@ -496,6 +519,23 @@ func (m *ZifModel) handleLayoutCommand(msg layout.LayoutCommandMsg) {
 			pane.Viewport.SetContent(content)
 			pane.Viewport.GotoTop()
 		}
+	case "set_border":
+		if len(msg.Args) < 2 {
+			s.Output("Invalid set_border command\n")
+			return
+		}
+		paneID := msg.Args[0]
+		borderType := msg.Args[1]
+		color := ""
+		if len(msg.Args) >= 3 {
+			color = msg.Args[2]
+		}
+		pane := m.Layout.FindPane(paneID)
+		if pane == nil {
+			s.Output(fmt.Sprintf("Pane %s not found\n", paneID))
+			return
+		}
+		pane.SetBorderStyle(borderType, color)
 	}
 }
 
@@ -577,10 +617,19 @@ func (m *ZifModel) updateMapPane() {
 		}
 	}
 
-	// Ensure viewport is properly sized
-	if mapPane.Viewport.Width != mapPane.Width || mapPane.Viewport.Height != mapPane.Height {
-		mapPane.Viewport.Width = mapPane.Width
-		mapPane.Viewport.Height = mapPane.Height
+	// Ensure viewport is properly sized (accounting for actual borders)
+	widthReduction, heightReduction := mapPane.CalculateBorderReduction()
+	viewportWidth := mapPane.Width - widthReduction
+	viewportHeight := mapPane.Height - heightReduction
+	if viewportWidth < 0 {
+		viewportWidth = 0
+	}
+	if viewportHeight < 0 {
+		viewportHeight = 0
+	}
+	if mapPane.Viewport.Width != viewportWidth || mapPane.Viewport.Height != viewportHeight {
+		mapPane.Viewport.Width = viewportWidth
+		mapPane.Viewport.Height = viewportHeight
 	}
 
 	// Check if kallisti plugin is active and session is connected

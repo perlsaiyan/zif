@@ -42,6 +42,15 @@ type Pane struct {
 	Title       string
 	Visible     bool
 	RenderFunc  func(*Pane, int, int) string // Custom render function
+	// Border customization
+	BorderStyle lipgloss.Border
+	BorderColor lipgloss.Color
+	ShowBorder  bool
+	// Individual border control
+	BorderTop    bool
+	BorderBottom bool
+	BorderLeft   bool
+	BorderRight  bool
 }
 
 // Container represents a split container with child panes
@@ -67,6 +76,28 @@ type Node interface {
 	Update(msg tea.Msg) (Node, tea.Cmd)
 }
 
+// CalculateBorderReduction returns the width and height reduction needed for borders
+func (p *Pane) CalculateBorderReduction() (widthReduction, heightReduction int) {
+	if !p.ShowBorder {
+		return 0, 0
+	}
+	
+	if p.BorderLeft {
+		widthReduction++
+	}
+	if p.BorderRight {
+		widthReduction++
+	}
+	if p.BorderTop {
+		heightReduction++
+	}
+	if p.BorderBottom {
+		heightReduction++
+	}
+	
+	return widthReduction, heightReduction
+}
+
 // Pane methods
 func (p *Pane) Render(width, height int) string {
 	if !p.Visible {
@@ -76,10 +107,20 @@ func (p *Pane) Render(width, height int) string {
 	p.Width = width
 	p.Height = height
 
-	// Update viewport size
-	if p.Viewport.Width != width || p.Viewport.Height != height {
-		p.Viewport.Width = width
-		p.Viewport.Height = height
+	// Calculate viewport size accounting for actual borders
+	widthReduction, heightReduction := p.CalculateBorderReduction()
+	viewportWidth := width - widthReduction
+	viewportHeight := height - heightReduction
+	if viewportWidth < 0 {
+		viewportWidth = 0
+	}
+	if viewportHeight < 0 {
+		viewportHeight = 0
+	}
+
+	if p.Viewport.Width != viewportWidth || p.Viewport.Height != viewportHeight {
+		p.Viewport.Width = viewportWidth
+		p.Viewport.Height = viewportHeight
 	}
 
 	// Use custom render function if available
@@ -88,20 +129,55 @@ func (p *Pane) Render(width, height int) string {
 	}
 
 	// Default rendering
+	var content string
+	
 	if p.Viewport.Width > 0 && p.Viewport.Height > 0 {
-		content := p.Viewport.View()
+		// Get viewport content
+		viewportContent := p.Viewport.View()
+		
 		if p.Title != "" {
+			// Title bar width needs to account for borders if present
+			titleWidth := width - widthReduction
+			if titleWidth < 0 {
+				titleWidth = 0
+			}
 			titleBar := p.Style.Copy().
-				Width(width).
+				Width(titleWidth).
 				Border(lipgloss.NormalBorder()).
 				BorderBottom(false).
 				Render(p.Title)
-			content = lipgloss.JoinVertical(lipgloss.Top, titleBar, content)
+			// Join title with viewport content
+			content = lipgloss.JoinVertical(lipgloss.Top, titleBar, viewportContent)
+		} else {
+			content = viewportContent
 		}
-		return content
+	} else {
+		content = p.Content
 	}
 
-	return p.Style.Copy().Width(width).Height(height).Render(p.Content)
+	// Apply border styling if enabled
+	if p.ShowBorder {
+		// Content is already sized to viewportWidth x viewportHeight
+		// Render with border at width x height - lipgloss will fit the content correctly
+		style := p.Style.Copy().
+			Width(width).
+			Height(height).
+			BorderStyle(p.BorderStyle)
+		
+		// Apply individual border settings
+		style = style.BorderTop(p.BorderTop).
+			BorderBottom(p.BorderBottom).
+			BorderLeft(p.BorderLeft).
+			BorderRight(p.BorderRight)
+		
+		if p.BorderColor != "" {
+			style = style.BorderForeground(p.BorderColor)
+		}
+		
+		return style.Render(content)
+	}
+
+	return p.Style.Copy().Width(width).Height(height).Render(content)
 }
 
 func (p *Pane) GetMinWidth() int {
@@ -121,9 +197,21 @@ func (p *Pane) GetMinHeight() int {
 func (p *Pane) SetSize(width, height int) {
 	p.Width = width
 	p.Height = height
+	
+	// Calculate viewport size accounting for actual borders
+	widthReduction, heightReduction := p.CalculateBorderReduction()
+	viewportWidth := width - widthReduction
+	viewportHeight := height - heightReduction
+	if viewportWidth < 0 {
+		viewportWidth = 0
+	}
+	if viewportHeight < 0 {
+		viewportHeight = 0
+	}
+	
 	if p.Viewport.Width > 0 && p.Viewport.Height > 0 {
-		p.Viewport.Width = width
-		p.Viewport.Height = height
+		p.Viewport.Width = viewportWidth
+		p.Viewport.Height = viewportHeight
 	}
 }
 
@@ -145,6 +233,12 @@ func (p *Pane) Update(msg tea.Msg) (Node, tea.Cmd) {
 		// Window size is handled at the layout level
 	case tea.KeyMsg:
 		// Pass key messages to viewport for scrolling
+		if p.Viewport.Width > 0 && p.Viewport.Height > 0 {
+			p.Viewport, cmd = p.Viewport.Update(msg)
+		}
+	case tea.MouseMsg:
+		// Mouse events are handled at the layout level, but we can pass them through
+		// for viewport scrolling (e.g., mouse wheel)
 		if p.Viewport.Width > 0 && p.Viewport.Height > 0 {
 			p.Viewport, cmd = p.Viewport.Update(msg)
 		}
@@ -282,14 +376,22 @@ func (c *Container) Update(msg tea.Msg) (Node, tea.Cmd) {
 func NewPane(id string, paneType PaneType) *Pane {
 	vp := viewport.New(0, 0)
 	return &Pane{
-		ID:       id,
-		Type:     paneType,
-		Viewport: vp,
-		Content:  "",
-		Visible:  true,
-		Style:    lipgloss.NewStyle(),
-		MinWidth: 10,
-		MinHeight: 5,
+		ID:          id,
+		Type:        paneType,
+		Viewport:    vp,
+		Content:     "",
+		Visible:     true,
+		Style:       lipgloss.NewStyle(),
+		MinWidth:    10,
+		MinHeight:   5,
+		BorderStyle: lipgloss.NormalBorder(),
+		BorderColor: "",
+		ShowBorder:  true,
+		// Default borders: bottom, left, right (no top border)
+		BorderTop:    false,
+		BorderBottom: true,
+		BorderLeft:   true,
+		BorderRight:  true,
 	}
 }
 
@@ -331,6 +433,30 @@ func ParsePaneType(s string) PaneType {
 		return PaneTypeGraph
 	default:
 		return PaneTypeCustom
+	}
+}
+
+// SetBorderStyle sets the border style for a pane
+func (p *Pane) SetBorderStyle(borderType string, color string) {
+	borderType = strings.ToLower(strings.TrimSpace(borderType))
+	switch borderType {
+	case "normal":
+		p.BorderStyle = lipgloss.NormalBorder()
+	case "rounded":
+		p.BorderStyle = lipgloss.RoundedBorder()
+	case "thick":
+		p.BorderStyle = lipgloss.ThickBorder()
+	case "double":
+		p.BorderStyle = lipgloss.DoubleBorder()
+	case "hidden":
+		p.BorderStyle = lipgloss.HiddenBorder()
+		p.ShowBorder = false
+	default:
+		p.BorderStyle = lipgloss.NormalBorder()
+	}
+	
+	if color != "" {
+		p.BorderColor = lipgloss.Color(color)
 	}
 }
 

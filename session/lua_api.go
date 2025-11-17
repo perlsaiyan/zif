@@ -575,6 +575,35 @@ func (s *Session) RegisterLuaAPI() {
 
 		return 0
 	}))
+
+	// session:layout_set_border(pane_id, border_type, color)
+	L.SetField(sessionMT, "layout_set_border", L.NewFunction(func(L *lua.LState) int {
+		paneID := L.CheckString(1)
+		borderType := L.CheckString(2)
+		color := ""
+		if L.GetTop() >= 3 {
+			color = L.CheckString(3)
+		}
+
+		// Send layout command message
+		if s.Handler != nil {
+			s.Handler.Sub <- layout.LayoutCommandMsg{
+				Command: "set_border",
+				Args:    []string{paneID, borderType, color},
+				Session: s,
+			}
+			s.Handler.Sub <- UpdateMessage{Session: s.Name}
+		} else {
+			s.Sub <- layout.LayoutCommandMsg{
+				Command: "set_border",
+				Args:    []string{paneID, borderType, color},
+				Session: s,
+			}
+			s.Sub <- UpdateMessage{Session: s.Name}
+		}
+
+		return 0
+	}))
 }
 
 // Helper functions to convert between Lua values and Go values
