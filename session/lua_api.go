@@ -604,9 +604,139 @@ func (s *Session) RegisterLuaAPI() {
 
 		return 0
 	}))
+
+	// MSDP functions
+
+	// session:msdp_get_string(key)
+	L.SetField(sessionMT, "msdp_get_string", L.NewFunction(func(L *lua.LState) int {
+		key := L.CheckString(1)
+		if s.MSDP != nil {
+			value := s.MSDP.GetString(key)
+			L.Push(lua.LString(value))
+		} else {
+			L.Push(lua.LString(""))
+		}
+		return 1
+	}))
+
+	// session:msdp_get_int(key)
+	L.SetField(sessionMT, "msdp_get_int", L.NewFunction(func(L *lua.LState) int {
+		key := L.CheckString(1)
+		if s.MSDP != nil {
+			value := s.MSDP.GetInt(key)
+			L.Push(lua.LNumber(value))
+		} else {
+			L.Push(lua.LNumber(0))
+		}
+		return 1
+	}))
+
+	// session:msdp_get_bool(key)
+	L.SetField(sessionMT, "msdp_get_bool", L.NewFunction(func(L *lua.LState) int {
+		key := L.CheckString(1)
+		if s.MSDP != nil {
+			value := s.MSDP.GetBool(key)
+			L.Push(lua.LBool(value))
+		} else {
+			L.Push(lua.LBool(false))
+		}
+		return 1
+	}))
+
+	// session:msdp_get_array(key)
+	L.SetField(sessionMT, "msdp_get_array", L.NewFunction(func(L *lua.LState) int {
+		key := L.CheckString(1)
+		if s.MSDP != nil {
+			arr := s.MSDP.GetArray(key)
+			if arr != nil {
+				table := L.NewTable()
+				for i, val := range arr {
+					L.RawSetInt(table, i+1, goValueToLua(L, val))
+				}
+				L.Push(table)
+			} else {
+				L.Push(lua.LNil)
+			}
+		} else {
+			L.Push(lua.LNil)
+		}
+		return 1
+	}))
+
+	// session:msdp_get_table(key)
+	L.SetField(sessionMT, "msdp_get_table", L.NewFunction(func(L *lua.LState) int {
+		key := L.CheckString(1)
+		if s.MSDP != nil {
+			table := s.MSDP.GetTable(key)
+			if table != nil {
+				luaTable := L.NewTable()
+				for k, v := range table {
+					L.SetField(luaTable, k, goValueToLua(L, v))
+				}
+				L.Push(luaTable)
+			} else {
+				L.Push(lua.LNil)
+			}
+		} else {
+			L.Push(lua.LNil)
+		}
+		return 1
+	}))
+
+	// session:msdp_get_all()
+	L.SetField(sessionMT, "msdp_get_all", L.NewFunction(func(L *lua.LState) int {
+		if s.MSDP != nil {
+			allData := s.MSDP.GetAllData()
+			luaTable := L.NewTable()
+			for k, v := range allData {
+				L.SetField(luaTable, k, goValueToLua(L, v))
+			}
+			L.Push(luaTable)
+		} else {
+			L.Push(L.NewTable())
+		}
+		return 1
+	}))
 }
 
 // Helper functions to convert between Lua values and Go values
+
+// goValueToLua converts a Go value to a Lua value, handling complex types recursively
+func goValueToLua(L *lua.LState, val interface{}) lua.LValue {
+	if val == nil {
+		return lua.LNil
+	}
+
+	switch v := val.(type) {
+	case string:
+		return lua.LString(v)
+	case int:
+		return lua.LNumber(v)
+	case int64:
+		return lua.LNumber(v)
+	case float64:
+		return lua.LNumber(v)
+	case bool:
+		return lua.LBool(v)
+	case []interface{}:
+		// Convert array to Lua table with 1-based indexing
+		table := L.NewTable()
+		for i, item := range v {
+			L.RawSetInt(table, i+1, goValueToLua(L, item))
+		}
+		return table
+	case map[string]interface{}:
+		// Convert map to Lua table with string keys
+		table := L.NewTable()
+		for k, item := range v {
+			L.SetField(table, k, goValueToLua(L, item))
+		}
+		return table
+	default:
+		// Fallback: try to convert using luaToLValue for simple types
+		return luaToLValue(L, val)
+	}
+}
 
 func luaToLValue(L *lua.LState, val interface{}) lua.LValue {
 	switch v := val.(type) {
