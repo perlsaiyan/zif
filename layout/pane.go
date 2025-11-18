@@ -2,8 +2,10 @@ package layout
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -51,6 +53,10 @@ type Pane struct {
 	BorderBottom bool
 	BorderLeft   bool
 	BorderRight  bool
+	// Progress bar support
+	ProgressBar   progress.Model
+	ProgressPercent float64
+	ShowProgress  bool
 }
 
 // Container represents a split container with child panes
@@ -125,13 +131,128 @@ func (p *Pane) Render(width, height int) string {
 
 	// Use custom render function if available
 	if p.RenderFunc != nil {
+		// If progress bar is enabled, we need to integrate it into custom render
+		if p.ShowProgress {
+			log.Printf("DEBUG: Custom RenderFunc exists for pane %s with ShowProgress=true, progress bar may not render", p.ID)
+		}
 		return p.RenderFunc(p, width, height)
 	}
 
 	// Default rendering
 	var content string
 	
-	if p.Viewport.Width > 0 && p.Viewport.Height > 0 {
+	// Render progress bar if enabled
+	if p.ShowProgress {
+		log.Printf("DEBUG: Entering progress bar rendering for pane %s", p.ID)
+		// Calculate available width for progress bar (accounting for borders)
+		progressWidth := viewportWidth
+		if progressWidth < 10 {
+			progressWidth = 10 // Minimum width
+		}
+		if progressWidth > 80 {
+			progressWidth = 80 // Maximum width for readability
+		}
+		
+		// Update progress bar width if needed
+		if p.ProgressBar.Width != progressWidth {
+			p.ProgressBar.Width = progressWidth
+		}
+		
+		// Render progress bar
+		progressContent := p.ProgressBar.ViewAs(p.ProgressPercent)
+		
+		// Debug: Log progress bar rendering
+		log.Printf("DEBUG: Rendering progress bar in pane %s: ShowProgress=%v, Width=%d, Percent=%f, Content length=%d, Content=%q", 
+			p.ID, p.ShowProgress, p.ProgressBar.Width, p.ProgressPercent, len(progressContent), progressContent)
+		
+		// If progress bar content is empty or just whitespace, something is wrong
+		if strings.TrimSpace(progressContent) == "" {
+			// Fallback: create a simple text representation
+			progressContent = fmt.Sprintf("[%s] %.0f%%", strings.Repeat(" ", int(p.ProgressBar.Width/2)), p.ProgressPercent*100)
+			log.Printf("DEBUG: Progress bar content was empty, using fallback: %q", progressContent)
+		}
+		
+		// Add some padding/spacing around the progress bar
+		pad := strings.Repeat(" ", 2)
+		progressWithPadding := pad + progressContent + "\n"
+		
+		// Combine with other content if present
+		// Priority: Progress bar should always be visible when ShowProgress is true
+		// When progress bar is enabled, we need to ensure it's always visible
+		// The issue is that viewport content might scroll and hide the progress bar
+		// So we'll render progress bar separately and reduce viewport height to make room
+		
+		// Calculate how much space the progress bar needs (roughly 3 lines: label + bar + padding)
+		progressBarHeight := 3
+		
+		// If viewport exists and has dimensions, we need to adjust its height to make room for progress bar
+		if p.Viewport.Width > 0 && p.Viewport.Height > 0 {
+			// Temporarily reduce viewport height to make room for progress bar
+			originalViewportHeight := p.Viewport.Height
+			adjustedViewportHeight := viewportHeight - progressBarHeight
+			if adjustedViewportHeight < 1 {
+				adjustedViewportHeight = 1
+			}
+			
+			// Set adjusted height temporarily
+			p.Viewport.Height = adjustedViewportHeight
+			viewportContent := p.Viewport.View()
+			// Restore original height
+			p.Viewport.Height = originalViewportHeight
+			
+			// Check if viewport actually has content (not just empty lines)
+			if strings.TrimSpace(viewportContent) != "" {
+				// Always show progress bar first, then viewport content
+				// Add a label to make progress bar more visible
+				label := fmt.Sprintf("Progress: %.0f%%", p.ProgressPercent*100)
+				progressSection := "\n" + pad + label + "\n" + progressWithPadding
+				
+				if p.Title != "" {
+					titleWidth := width - widthReduction
+					if titleWidth < 0 {
+						titleWidth = 0
+					}
+					titleBar := p.Style.Copy().
+						Width(titleWidth).
+						Border(lipgloss.NormalBorder()).
+						BorderBottom(false).
+						Render(p.Title)
+					// Progress bar goes after title, before viewport
+					content = lipgloss.JoinVertical(lipgloss.Top, titleBar, progressSection, viewportContent)
+				} else {
+					// Progress bar first, then viewport
+					content = lipgloss.JoinVertical(lipgloss.Top, progressSection, viewportContent)
+				}
+			} else {
+				// Viewport has no content, just show progress bar
+				if p.Title != "" {
+					titleWidth := width - widthReduction
+					if titleWidth < 0 {
+						titleWidth = 0
+					}
+					titleBar := p.Style.Copy().
+						Width(titleWidth).
+						Border(lipgloss.NormalBorder()).
+						BorderBottom(false).
+						Render(p.Title)
+					label := fmt.Sprintf("Progress: %.0f%%", p.ProgressPercent*100)
+					content = lipgloss.JoinVertical(lipgloss.Top, titleBar, "\n"+pad+label+"\n", progressWithPadding)
+				} else {
+					label := fmt.Sprintf("Progress: %.0f%%", p.ProgressPercent*100)
+					content = "\n" + pad + label + "\n" + progressWithPadding
+				}
+			}
+		} else if p.Content != "" {
+			// Progress bar first, then static content
+			content = lipgloss.JoinVertical(lipgloss.Top, progressWithPadding, p.Content)
+		} else {
+			// Just show progress bar with some vertical padding
+			// Add a label to make it more visible for debugging
+			label := fmt.Sprintf("Progress: %.0f%%", p.ProgressPercent*100)
+			content = "\n" + pad + label + "\n" + progressWithPadding
+		}
+		log.Printf("DEBUG: Progress bar rendering complete for pane %s, content length=%d", p.ID, len(content))
+	} else if p.Viewport.Width > 0 && p.Viewport.Height > 0 {
 		// Get viewport content
 		viewportContent := p.Viewport.View()
 		
@@ -228,20 +349,50 @@ func (p *Pane) GetAllPanes() []*Pane {
 
 func (p *Pane) Update(msg tea.Msg) (Node, tea.Cmd) {
 	var cmd tea.Cmd
+	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		// Window size is handled at the layout level
+		if p.ShowProgress {
+			// Update progress bar width on window resize
+			p.ProgressBar.Width = p.Width - 4 // Account for borders
+			if p.ProgressBar.Width < 10 {
+				p.ProgressBar.Width = 10
+			}
+			if p.ProgressBar.Width > 80 {
+				p.ProgressBar.Width = 80
+			}
+		}
 	case tea.KeyMsg:
 		// Pass key messages to viewport for scrolling
 		if p.Viewport.Width > 0 && p.Viewport.Height > 0 {
 			p.Viewport, cmd = p.Viewport.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 	case tea.MouseMsg:
 		// Mouse events are handled at the layout level, but we can pass them through
 		// for viewport scrolling (e.g., mouse wheel)
 		if p.Viewport.Width > 0 && p.Viewport.Height > 0 {
 			p.Viewport, cmd = p.Viewport.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
+	case progress.FrameMsg:
+		// Handle progress bar animation frames
+		if p.ShowProgress {
+			var progressCmd tea.Cmd
+			progressModel, progressCmd := p.ProgressBar.Update(msg)
+			p.ProgressBar = progressModel.(progress.Model)
+			if progressCmd != nil {
+				cmds = append(cmds, progressCmd)
+			}
+		}
+	}
+	if len(cmds) > 0 {
+		return p, tea.Batch(cmds...)
 	}
 	return p, cmd
 }

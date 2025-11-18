@@ -454,7 +454,9 @@ func (s *Session) RegisterLuaAPI() {
 			s.Sub <- UpdateMessage{Session: s.Name}
 		}
 
-		return 0
+		// Return the created pane ID
+		L.Push(lua.LString(newPaneID))
+		return 1
 	}))
 
 	// session:layout_unsplit(pane_id)
@@ -597,6 +599,102 @@ func (s *Session) RegisterLuaAPI() {
 			s.Sub <- layout.LayoutCommandMsg{
 				Command: "set_border",
 				Args:    []string{paneID, borderType, color},
+				Session: s,
+			}
+			s.Sub <- UpdateMessage{Session: s.Name}
+		}
+
+		return 0
+	}))
+
+	// Progress bar functions
+
+	// session:progress_create(pane_id, width)
+	L.SetField(sessionMT, "progress_create", L.NewFunction(func(L *lua.LState) int {
+		paneID := L.CheckString(1)
+		width := 40 // Default width
+		if L.GetTop() >= 2 {
+			width = L.CheckInt(2)
+		}
+
+		// Validate width
+		if width < 10 {
+			width = 10
+		}
+		if width > 80 {
+			width = 80
+		}
+
+		// Send layout command message
+		if s.Handler != nil {
+			s.Handler.Sub <- layout.LayoutCommandMsg{
+				Command: "progress_create",
+				Args:    []string{paneID, fmt.Sprintf("%d", width)},
+				Session: s,
+			}
+			s.Handler.Sub <- UpdateMessage{Session: s.Name}
+		} else {
+			s.Sub <- layout.LayoutCommandMsg{
+				Command: "progress_create",
+				Args:    []string{paneID, fmt.Sprintf("%d", width)},
+				Session: s,
+			}
+			s.Sub <- UpdateMessage{Session: s.Name}
+		}
+
+		return 0
+	}))
+
+	// session:progress_update(pane_id, percent)
+	L.SetField(sessionMT, "progress_update", L.NewFunction(func(L *lua.LState) int {
+		paneID := L.CheckString(1)
+		percent := L.CheckNumber(2)
+
+		// Validate percent (0.0 to 1.0)
+		percentVal := float64(percent)
+		if percentVal < 0.0 {
+			percentVal = 0.0
+		}
+		if percentVal > 1.0 {
+			percentVal = 1.0
+		}
+
+		// Send layout command message
+		if s.Handler != nil {
+			s.Handler.Sub <- layout.LayoutCommandMsg{
+				Command: "progress_update",
+				Args:    []string{paneID, fmt.Sprintf("%f", percentVal)},
+				Session: s,
+			}
+			s.Handler.Sub <- UpdateMessage{Session: s.Name}
+		} else {
+			s.Sub <- layout.LayoutCommandMsg{
+				Command: "progress_update",
+				Args:    []string{paneID, fmt.Sprintf("%f", percentVal)},
+				Session: s,
+			}
+			s.Sub <- UpdateMessage{Session: s.Name}
+		}
+
+		return 0
+	}))
+
+	// session:progress_destroy(pane_id)
+	L.SetField(sessionMT, "progress_destroy", L.NewFunction(func(L *lua.LState) int {
+		paneID := L.CheckString(1)
+
+		// Send layout command message
+		if s.Handler != nil {
+			s.Handler.Sub <- layout.LayoutCommandMsg{
+				Command: "progress_destroy",
+				Args:    []string{paneID},
+				Session: s,
+			}
+			s.Handler.Sub <- UpdateMessage{Session: s.Name}
+		} else {
+			s.Sub <- layout.LayoutCommandMsg{
+				Command: "progress_destroy",
+				Args:    []string{paneID},
 				Session: s,
 			}
 			s.Sub <- UpdateMessage{Session: s.Name}

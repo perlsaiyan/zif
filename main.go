@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -536,6 +537,111 @@ func (m *ZifModel) handleLayoutCommand(msg layout.LayoutCommandMsg) {
 			return
 		}
 		pane.SetBorderStyle(borderType, color)
+	case "progress_create":
+		if len(msg.Args) < 1 {
+			s.Output("Invalid progress_create command\n")
+			return
+		}
+		paneID := msg.Args[0]
+		width := 40 // Default width
+		if len(msg.Args) >= 2 {
+			var err error
+			width, err = strconv.Atoi(msg.Args[1])
+			if err != nil {
+				s.Output(fmt.Sprintf("Invalid width: %s\n", msg.Args[1]))
+				return
+			}
+		}
+		pane := m.Layout.FindPane(paneID)
+		if pane == nil {
+			s.Output(fmt.Sprintf("Pane %s not found\n", paneID))
+			return
+		}
+		// Create progress bar
+		pane.ProgressBar = progress.New(progress.WithDefaultGradient())
+		// Set width based on pane's actual width if available, otherwise use requested width
+		if pane.Width > 0 {
+			// Account for borders
+			widthReduction, _ := pane.CalculateBorderReduction()
+			progressWidth := pane.Width - widthReduction - 4 // 4 for padding
+			if progressWidth < 10 {
+				progressWidth = 10
+			}
+			if progressWidth > 80 {
+				progressWidth = 80
+			}
+			pane.ProgressBar.Width = progressWidth
+		} else {
+			pane.ProgressBar.Width = width
+		}
+		pane.ProgressBar.ShowPercentage = true
+		pane.ProgressPercent = 0.0
+		pane.ShowProgress = true
+		// Initialize with 0% to trigger first render
+		pane.ProgressBar.SetPercent(0.0)
+
+		// Debug output
+		log.Printf("DEBUG: Created progress bar in pane %s: Width=%d, PaneWidth=%d, ShowProgress=%v, ProgressPercent=%f",
+			paneID, pane.ProgressBar.Width, pane.Width, pane.ShowProgress, pane.ProgressPercent)
+
+		s.Output(fmt.Sprintf("Created progress bar in pane %s (width: %d, pane width: %d)\n",
+			paneID, pane.ProgressBar.Width, pane.Width))
+	case "progress_update":
+		if len(msg.Args) < 2 {
+			s.Output("Invalid progress_update command\n")
+			return
+		}
+		paneID := msg.Args[0]
+		percentStr := msg.Args[1]
+		percent, err := strconv.ParseFloat(percentStr, 64)
+		if err != nil {
+			s.Output(fmt.Sprintf("Invalid percent: %s\n", percentStr))
+			return
+		}
+		// Clamp percent to 0.0-1.0
+		if percent < 0.0 {
+			percent = 0.0
+		}
+		if percent > 1.0 {
+			percent = 1.0
+		}
+		pane := m.Layout.FindPane(paneID)
+		if pane == nil {
+			s.Output(fmt.Sprintf("Pane %s not found\n", paneID))
+			return
+		}
+		if !pane.ShowProgress {
+			s.Output(fmt.Sprintf("Pane %s does not have a progress bar\n", paneID))
+			return
+		}
+		// Update progress
+		pane.ProgressPercent = percent
+		// Set the progress bar value (animation will happen via frame messages in Update loop)
+		pane.ProgressBar.SetPercent(percent)
+
+		// Debug output
+		log.Printf("DEBUG: Updated progress bar in pane %s: Percent=%f, Width=%d", paneID, percent, pane.ProgressBar.Width)
+	case "progress_destroy":
+		if len(msg.Args) < 1 {
+			s.Output("Invalid progress_destroy command\n")
+			return
+		}
+		paneID := msg.Args[0]
+		pane := m.Layout.FindPane(paneID)
+		if pane == nil {
+			s.Output(fmt.Sprintf("Pane %s not found\n", paneID))
+			return
+		}
+		if !pane.ShowProgress {
+			s.Output(fmt.Sprintf("Pane %s does not have a progress bar\n", paneID))
+			return
+		}
+		// Destroy progress bar
+		pane.ShowProgress = false
+		pane.ProgressPercent = 0.0
+		// Reset progress bar model
+		pane.ProgressBar = progress.New(progress.WithDefaultGradient())
+		s.Output(fmt.Sprintf("Destroyed progress bar in pane %s\n", paneID))
 	}
 }
 
