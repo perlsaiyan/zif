@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/wordwrap"
 	"github.com/perlsaiyan/zif/config"
 	"github.com/perlsaiyan/zif/layout"
 	"github.com/perlsaiyan/zif/session"
@@ -75,6 +76,32 @@ func (m ZifModel) View() string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Top, content, m.Input.View(), m.StatusBar.View())
+}
+
+// wrapViewportContent wraps content for a viewport based on its width.
+// This ensures long lines wrap instead of running off the end.
+func wrapViewportContent(content string, viewportWidth int) string {
+	if viewportWidth <= 0 {
+		// If width not set, return content as-is
+		return content
+	}
+
+	// Split content into lines, wrap each line, then rejoin
+	lines := strings.Split(content, "\n")
+	wrappedLines := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		if len(line) == 0 {
+			// Preserve empty lines
+			wrappedLines = append(wrappedLines, "")
+			continue
+		}
+		// Wrap the line using wordwrap (which is ANSI-aware)
+		wrapped := wordwrap.String(line, viewportWidth)
+		wrappedLines = append(wrappedLines, wrapped)
+	}
+
+	return strings.Join(wrappedLines, "\n")
 }
 
 // A command that waits for the activity on a channel.
@@ -167,7 +194,9 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.Layout != nil {
 				mainPane := m.Layout.FindPane("main")
 				if mainPane != nil {
-					mainPane.Viewport.SetContent(activeSession.Content)
+					// Wrap content before setting it to viewport
+					wrappedContent := wrapViewportContent(activeSession.Content, mainPane.Viewport.Width)
+					mainPane.Viewport.SetContent(wrappedContent)
 					mainPane.Viewport.GotoBottom()
 					m.StatusBar.ThirdColumn = fmt.Sprintf("%d", mainPane.Viewport.TotalLineCount())
 				}
@@ -216,13 +245,16 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if mainPane != nil {
 					jump := mainPane.Viewport.AtBottom()
+					contentToSet := activeSession.Content
 					if jump {
-						lines := strings.Split(activeSession.Content, "\n")
+						lines := strings.Split(contentToSet, "\n")
 						if len(lines) > 1000 {
-							activeSession.Content = strings.Join(lines[len(lines)-1000:], "\n")
+							contentToSet = strings.Join(lines[len(lines)-1000:], "\n")
 						}
 					}
-					mainPane.Viewport.SetContent(activeSession.Content)
+					// Wrap content before setting it to viewport
+					wrappedContent := wrapViewportContent(contentToSet, mainPane.Viewport.Width)
+					mainPane.Viewport.SetContent(wrappedContent)
 					if jump {
 						mainPane.Viewport.GotoBottom()
 					}
@@ -346,7 +378,9 @@ func (m ZifModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if mainPane != nil {
 				mainPane.Viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
 				mainPane.Viewport.HighPerformanceRendering = useHighPerformanceRenderer
-				mainPane.Viewport.SetContent(session.Motd())
+				// Wrap MOTD content before setting it
+				wrappedMotd := wrapViewportContent(session.Motd(), mainPane.Viewport.Width)
+				mainPane.Viewport.SetContent(wrappedMotd)
 			}
 			m.Ready = true
 
@@ -517,7 +551,9 @@ func (m *ZifModel) handleLayoutCommand(msg layout.LayoutCommandMsg) {
 		// Set content and update viewport if it exists
 		pane.Content = content
 		if pane.Viewport.Width > 0 && pane.Viewport.Height > 0 {
-			pane.Viewport.SetContent(content)
+			// Wrap content before setting it to viewport
+			wrappedContent := wrapViewportContent(content, pane.Viewport.Width)
+			pane.Viewport.SetContent(wrappedContent)
 			pane.Viewport.GotoTop()
 		}
 	case "set_border":
