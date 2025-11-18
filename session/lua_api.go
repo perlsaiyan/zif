@@ -866,3 +866,55 @@ func lValueToGo(lv lua.LValue) interface{} {
 	}
 }
 
+// RegisterContextInjector registers a context injector for this session
+func (s *Session) RegisterContextInjector(name string, injector ContextInjector) {
+	if s.contextInjectors == nil {
+		s.contextInjectors = make(map[string]ContextInjector)
+	}
+	s.contextInjectors[name] = injector
+}
+
+// RegisterMSDPUpdateHook registers a hook to be called when MSDP data is updated
+func (s *Session) RegisterMSDPUpdateHook(name string, hook MSDPUpdateHook) {
+	if s.msdpUpdateHooks == nil {
+		s.msdpUpdateHooks = make(map[string]MSDPUpdateHook)
+	}
+	s.msdpUpdateHooks[name] = hook
+}
+
+// RegisterMUDLineHook registers a hook to be called when a MUD line is processed
+func (s *Session) RegisterMUDLineHook(name string, hook MUDLineHook) {
+	if s.mudLineHooks == nil {
+		s.mudLineHooks = make(map[string]MUDLineHook)
+	}
+	s.mudLineHooks[name] = hook
+}
+
+// InjectContext calls all registered context injectors for this session
+func (s *Session) InjectContext() error {
+	if s == nil || s.contextInjectors == nil || s.LuaState == nil {
+		return nil
+	}
+	for name, injector := range s.contextInjectors {
+		if err := injector(s, s.LuaState); err != nil {
+			log.Printf("Error injecting context %s: %v", name, err)
+			return err
+		}
+	}
+	return nil
+}
+
+// UpdateContextInjector updates a specific context injector by re-running it
+func (s *Session) UpdateContextInjector(name string) error {
+	if s == nil || s.contextInjectors == nil || s.LuaState == nil {
+		return nil
+	}
+	if injector, ok := s.contextInjectors[name]; ok {
+		if err := injector(s, s.LuaState); err != nil {
+			log.Printf("Error updating context injector %s: %v", name, err)
+			return err
+		}
+	}
+	return nil
+}
+

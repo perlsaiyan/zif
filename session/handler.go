@@ -17,6 +17,15 @@ import (
 // LineTerminator is the RFC 854 (Telnet) standard line terminator: CR LF
 const LineTerminator = "\r\n"
 
+// ContextInjector is a function type that injects context into a Lua state
+type ContextInjector func(*Session, *lua.LState) error
+
+// MSDPUpdateHook is a function type called when MSDP data is updated
+type MSDPUpdateHook func(*Session, map[string]interface{})
+
+// MUDLineHook is a function type called when a MUD line is processed
+type MUDLineHook func(*Session, string)
+
 type SessionHandler struct {
 	Active   string
 	Sessions map[string]*Session
@@ -49,6 +58,11 @@ type Session struct {
 	Modules      *ModuleRegistry
 	EchoNegotiated bool // Infinite loop protection: track if we've responded to ECHO negotiation
 	LoginComplete   bool // Track if we've completed login (entered the game)
+	
+	// Context injection system
+	contextInjectors map[string]ContextInjector
+	msdpUpdateHooks map[string]MSDPUpdateHook
+	mudLineHooks    map[string]MUDLineHook
 }
 
 // HandleInput processes the input command.
@@ -107,11 +121,25 @@ func NewHandler() SessionHandler {
 	s.Handler = &sh
 	sh.Sessions["zif"] = &s
 	
+	// Initialize context for the default session
+	ctx := context.Background()
+	s.Context, s.Cancel = context.WithCancel(ctx)
+	
 	// Initialize Lua state and registries for the default session
 	s.LuaState = lua.NewState()
 	s.Actions = NewActionRegistry()
 	s.Aliases = NewAliasRegistry()
+	s.Events = NewEventRegistry()
+	s.Queue = NewQueueRegistry()
+	s.Ringlog = NewRingLog()
 	s.Modules = NewModuleRegistry()
+	s.Data = make(map[string]interface{})
+	s.contextInjectors = make(map[string]ContextInjector)
+	s.msdpUpdateHooks = make(map[string]MSDPUpdateHook)
+	s.mudLineHooks = make(map[string]MUDLineHook)
+	
+	// Initialize ticker registry (requires context)
+	NewTickerRegistry(s.Context, &s)
 
 	// Register Lua API
 	s.RegisterLuaAPI()
@@ -170,6 +198,10 @@ func (s *SessionHandler) AddSession(name, address string) error {
 		Data:     make(map[string]interface{}),
 		LuaState: lua.NewState(),
 		Modules:  NewModuleRegistry(),
+		
+		contextInjectors: make(map[string]ContextInjector),
+		msdpUpdateHooks: make(map[string]MSDPUpdateHook),
+		mudLineHooks:    make(map[string]MUDLineHook),
 	}
 
 	// Initialize the priority Queue
@@ -228,6 +260,11 @@ func (s *SessionHandler) AddSession(name, address string) error {
 		f.(func(*Session))(newSession)
 	}
 
+	// Inject context after plugins have registered their injectors
+	if err := newSession.InjectContext(); err != nil {
+		log.Printf("Warning: failed to inject context: %v", err)
+	}
+
 	go newSession.mudReader()
 	return nil
 }
@@ -257,4 +294,28 @@ func (h *SessionHandler) PluginMOTD() string {
 		msg += f.(func() string)()
 	}
 	return msg
+}
+
+// OnMSDPUpdate calls all registered MSDP update hooks with the updated MSDP data
+func (s *Session) OnMSDPUpdate(msdpData map[string]interface{}) {
+	if s == nil || s.msdpUpdateHooks == nil {
+		return
+	}
+	for _, hook := range s.msdpUpdateHooks {
+		if hook != nil {
+			hook(s, msdpData)
+		}
+	}
+}
+
+// OnMUDLine calls all registered MUD line hooks with the line content
+func (s *Session) OnMUDLine(line string) {
+	if s == nil || s.mudLineHooks == nil {
+		return
+	}
+	for _, hook := range s.mudLineHooks {
+		if hook != nil {
+			hook(s, line)
+		}
+	}
 }

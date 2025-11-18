@@ -879,7 +879,24 @@ func main() {
 
 	}
 
+	// Register plugins for all existing sessions (including default "zif" session)
 	if len(m.SessionHandler.Plugins.Plugins) > 0 {
+		for _, sess := range m.SessionHandler.Sessions {
+			for _, v := range m.SessionHandler.Plugins.Plugins {
+				log.Printf("Activating plugin %s for session %s", v.Name, sess.Name)
+				f, err := v.Plugin.Lookup("RegisterSession")
+				if err != nil {
+					log.Printf("RegisterSession() lookup failure on plugin %s", v.Name)
+					continue
+				}
+				f.(func(*session.Session))(sess)
+			}
+			// Inject context after plugins have registered their injectors
+			if err := sess.InjectContext(); err != nil {
+				log.Printf("Warning: failed to inject context for session %s: %v", sess.Name, err)
+			}
+		}
+
 		activeSession := m.SessionHandler.ActiveSession()
 		if activeSession != nil {
 			activeSession.Output("Installed Plugins:\n" + m.SessionHandler.PluginMOTD() + "\n")

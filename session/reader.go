@@ -59,6 +59,8 @@ func (s *Session) mudReader() tea.Cmd {
 				s.ActionParser(outbuf)
 				s.Content += linestring
 				sub <- UpdateMessage{Session: s.Name, Content: linestring}
+				// Call MUD line hooks
+				s.OnMUDLine(linestring)
 				outbuf = outbuf[:0]
 			}
 		} else if buffer[0] == 255 {
@@ -75,6 +77,8 @@ func (s *Session) mudReader() tea.Cmd {
 
 				sub <- UpdateMessage{Session: s.Name, Content: string(outbuf) + "\n"}
 				s.ActionParser(outbuf)
+				// Call MUD line hooks
+				s.OnMUDLine(linestring)
 				outbuf = outbuf[:0]
 			} else if buffer[0] == 251 { // WILL
 				_, _ = s.Socket.Read(buffer)
@@ -152,7 +156,11 @@ func (s *Session) mudReader() tea.Cmd {
 				// Good SB: MSDP subnegotiation received
 				switch sb[0] {
 				case 69:
-					s.MSDP.HandleSB(s.Socket, sb)
+					if s.MSDP != nil {
+						s.MSDP.HandleSB(s.Socket, sb)
+						// Call MSDP update hooks after handling MSDP
+						s.OnMSDPUpdate(s.MSDP.GetAllData())
+					}
 				case 24:
 					switch s.TTCount {
 					case 0:
@@ -181,6 +189,8 @@ func (s *Session) mudReader() tea.Cmd {
 
 			s.Content += linestring + "\n"
 			sub <- UpdateMessage{Session: s.Name, Content: string(outbuf) + "\n"}
+			// Call MUD line hooks
+			s.OnMUDLine(linestring)
 			outbuf = outbuf[:0]
 		} else {
 			outbuf = append(outbuf, buffer[0])
