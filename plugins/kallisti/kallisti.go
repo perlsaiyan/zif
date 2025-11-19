@@ -5,8 +5,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/jmoiron/sqlx"
-	lua "github.com/yuin/gopher-lua"
 	"github.com/perlsaiyan/zif/session"
+	lua "github.com/yuin/gopher-lua"
 )
 
 var Info session.PluginInfo = session.PluginInfo{Name: "Kallisti", Version: "0.1a"}
@@ -18,6 +18,16 @@ type KallistiData struct {
 	Atlas                *sqlx.DB
 	World                map[string]AtlasRoomRecord
 	Travel               KallistiTravel
+	CurrentRoom          CurrentRoom
+}
+
+type CurrentRoom struct {
+	Vnum        string
+	Title       string
+	Description string
+	Exits       []string
+	Objects     []string
+	Mobs        []string
 }
 
 type KallistiTravel struct {
@@ -115,17 +125,42 @@ func kallistiContextInjector(s *session.Session, L *lua.LState) error {
 	}
 	L.SetField(kallistiTable, "last_line", lastLineValue)
 
-	// Add current_room() function (placeholder for now)
+	// Add current_room() function
 	L.SetField(kallistiTable, "current_room", L.NewFunction(func(L *lua.LState) int {
-		// TODO: Return actual room table
-		roomTable := L.NewTable()
-		L.Push(roomTable)
+		if d, ok := s.Data["kallisti"].(*KallistiData); ok {
+			roomTable := L.NewTable()
+			L.SetField(roomTable, "vnum", lua.LString(d.CurrentRoom.Vnum))
+			L.SetField(roomTable, "title", lua.LString(d.CurrentRoom.Title))
+			L.SetField(roomTable, "description", lua.LString(d.CurrentRoom.Description))
+
+			exitsTable := L.NewTable()
+			for i, ex := range d.CurrentRoom.Exits {
+				exitsTable.Insert(i+1, lua.LString(ex))
+			}
+			L.SetField(roomTable, "exits", exitsTable)
+
+			objectsTable := L.NewTable()
+			for i, obj := range d.CurrentRoom.Objects {
+				objectsTable.Insert(i+1, lua.LString(obj))
+			}
+			L.SetField(roomTable, "objects", objectsTable)
+
+			mobsTable := L.NewTable()
+			for i, mob := range d.CurrentRoom.Mobs {
+				mobsTable.Insert(i+1, lua.LString(mob))
+			}
+			L.SetField(roomTable, "mobs", mobsTable)
+
+			L.Push(roomTable)
+			return 1
+		}
+		L.Push(lua.LNil)
 		return 1
 	}))
 
 	// Add group table
 	groupTable := L.NewTable()
-	
+
 	// Add group.healers_present() function
 	L.SetField(groupTable, "healers_present", L.NewFunction(func(L *lua.LState) int {
 		// TODO: Process GROUP MSDP and return healers

@@ -110,6 +110,45 @@ func (r RingLog) GetRingEntry(id int) *RingRecord {
 	return &record
 }
 
+func (r RingLog) GetLog(start int, end int) []RingRecord {
+	var records []RingRecord
+
+	// Handle wrapping if start > end (ring buffer)
+	// But for now let's assume simple case or handle the query logic
+	// Since it's a ring buffer 0-9999, if start > end, it means we wrapped around.
+
+	var query string
+	var rows *sql.Rows
+	var err error
+
+	if start <= end {
+		query = "select ring_number, epoch_ns, message, stripped from ring_log where ring_number >= ? and ring_number <= ? order by ring_number asc"
+		rows, err = r.Db.Query(query, start, end)
+	} else {
+		// Wrapped around
+		// Get from start to 9999
+		// Get from 0 to end
+		// Actually we can just use OR
+		query = "select ring_number, epoch_ns, message, stripped from ring_log where ring_number >= ? OR ring_number <= ? order by case when ring_number >= ? then 0 else 1 end, ring_number asc"
+		rows, err = r.Db.Query(query, start, end, start)
+	}
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var record RingRecord
+		err = rows.Scan(&record.RingNumber, &record.EpochNS, &record.Message, &record.Stripped)
+		if err != nil {
+			log.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
 func CmdRingtest(s *Session, cmd string) {
 	id, err := strconv.Atoi(cmd)
 	if err != nil {
