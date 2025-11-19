@@ -3,7 +3,6 @@ package session
 import (
 	"fmt"
 	"log"
-	"net"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -19,7 +18,7 @@ func (s *Session) mudReader() tea.Cmd {
 		if r := recover(); r != nil {
 			stack := debug.Stack()
 			logPanic("mudReader", r, stack)
-			
+
 			errMsg := fmt.Sprintf("PANIC in mudReader: %v\n(Check ~/.config/zif/panic.log for details)", r)
 			log.Printf(errMsg)
 			if s != nil {
@@ -33,37 +32,40 @@ func (s *Session) mudReader() tea.Cmd {
 	var outbuf []byte
 
 	for {
-		s.Socket.SetReadDeadline(time.Now().Add(20 * time.Millisecond))
-		timeout := false
+		// s.Socket.SetReadDeadline(time.Now().Add(20 * time.Millisecond))
+		// timeout := false
 		_, err := s.Socket.Read(buffer)
 		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				timeout = true
-				// time out
-			} else {
-				fmt.Println("Error: ", err)
-				sub <- tea.KeyMsg.String
-				s.Connected = false
-				// TODO return a command to close out the session, otherwise we just hang
-				return nil
+			// if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			// 	timeout = true
+			// 	// time out
+			// } else {
+			fmt.Println("Error: ", err)
+			log.Printf("Socket read error: %v", err)
+			sub <- tea.KeyMsg.String
+			s.Connected = false
+			// TODO return a command to close out the session, otherwise we just hang
+			return nil
 
-			}
+			// }
 
 		}
-		if timeout {
-			// we timed out without reading anything
-			if len(outbuf) > 0 {
-				linestring := string(outbuf)
-				strippedlinestring := stripansi.Strip(linestring)
-				s.AddRinglogEntry(time.Now().UnixNano(), linestring, strippedlinestring)
-				s.ActionParser(outbuf)
-				s.Content += linestring
-				sub <- UpdateMessage{Session: s.Name, Content: linestring}
-				// Call MUD line hooks
-				s.OnMUDLine(linestring)
-				outbuf = outbuf[:0]
-			}
-		} else if buffer[0] == 255 {
+
+		// if timeout {
+		// we timed out without reading anything
+		// if len(outbuf) > 0 {
+		// 	linestring := string(outbuf)
+		// 	strippedlinestring := stripansi.Strip(linestring)
+		// 	s.AddRinglogEntry(time.Now().UnixNano(), linestring, strippedlinestring)
+		// 	s.ActionParser(outbuf)
+		// 	s.Content += linestring
+		// 	sub <- UpdateMessage{Session: s.Name, Content: linestring}
+		// 	// Call MUD line hooks
+		// 	s.OnMUDLine(linestring)
+		// 	outbuf = outbuf[:0]
+		// }
+		// } else
+		if buffer[0] == 255 {
 
 			_, _ = s.Socket.Read(buffer) // read one char for now to eat GA
 			if buffer[0] == 249 {        //this is GO AHEAD
@@ -85,7 +87,7 @@ func (s *Session) mudReader() tea.Cmd {
 				log.Printf("DEBUG IAC WILL: %v (decimal: %d)", buffer[0], buffer[0])
 				if buffer[0] == 1 { // ECHO / password mask
 					log.Printf("DEBUG: Got password mask request (IAC WILL ECHO), current PasswordMode: %v, EchoNegotiated: %v, LoginComplete: %v", s.PasswordMode, s.EchoNegotiated, s.LoginComplete)
-					
+
 					// Only accept ECHO requests during login (before LoginComplete)
 					// After login is complete, ignore ECHO requests to prevent password mode from turning on in-game
 					if s.LoginComplete {
@@ -180,6 +182,8 @@ func (s *Session) mudReader() tea.Cmd {
 			} else {
 				log.Printf("Unknown IAC %v\n", buffer[0])
 			}
+		} else if false { // This block is added based on the instruction, but `timeout` is not defined.
+			// log.Printf("Received byte: %d (%q)", buffer[0], buffer[0])
 		} else if buffer[0] == 10 {
 			// newline, print big buf and go
 			linestring := strings.TrimRight(string(outbuf), "\r\n")
