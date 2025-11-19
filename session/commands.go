@@ -29,16 +29,16 @@ var internalCommands = []Command{
 	{"help", CmdHelp},
 	{Name: "modules", Fn: CmdModules},
 	{Name: "msdp", Fn: CmdMSDP},
-	{Name: "pane", Fn: nil}, // Layout command, handled separately
+	{Name: "pane", Fn: nil},  // Layout command, handled separately
 	{Name: "panes", Fn: nil}, // Layout command, handled separately
 	{Name: "plugins", Fn: CmdPlugins},
 	{Name: "queue", Fn: CmdQueue},
 	{Name: "ringtest", Fn: CmdRingtest},
 	{Name: "session", Fn: CmdSession},
 	{Name: "sessions", Fn: CmdSessions},
-	{Name: "split", Fn: nil}, // Layout command, handled separately
+	{Name: "split", Fn: nil},   // Layout command, handled separately
 	{Name: "unsplit", Fn: nil}, // Layout command, handled separately
-	{Name: "focus", Fn: nil}, // Layout command, handled separately
+	{Name: "focus", Fn: nil},   // Layout command, handled separately
 	{Name: "test", Fn: CmdTestTicker},
 	{Name: "tickers", Fn: CmdTickers},
 }
@@ -76,7 +76,7 @@ func formatMSDPValue(v interface{}, indent int) string {
 	if indent > maxDepth {
 		return "... (max depth exceeded)"
 	}
-	
+
 	indentStr := strings.Repeat("  ", indent)
 	switch val := v.(type) {
 	case string:
@@ -97,7 +97,7 @@ func formatMSDPValue(v interface{}, indent int) string {
 			displayItems = val[:maxArrayItems]
 			truncated = true
 		}
-		
+
 		// For simple arrays of strings/ints, show inline
 		allSimple := true
 		for _, item := range displayItems {
@@ -147,14 +147,14 @@ func formatMSDPValue(v interface{}, indent int) string {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		
+
 		displayKeys := keys
 		truncated := false
 		if len(keys) > maxTableItems {
 			displayKeys = keys[:maxTableItems]
 			truncated = true
 		}
-		
+
 		// Always format tables multi-line for readability
 		var lines []string
 		lines = append(lines, "{")
@@ -179,9 +179,9 @@ func formatMSDPValue(v interface{}, indent int) string {
 func CmdMSDP(s *Session, cmd string) {
 	// Get a safe copy of the data to avoid concurrent access
 	data := s.MSDP.GetAllData()
-	
+
 	log.Printf("CmdMSDP: Starting, data has %d keys", len(data))
-	
+
 	if len(data) == 0 {
 		s.Output("No MSDP data available.\n")
 		return
@@ -195,19 +195,19 @@ func CmdMSDP(s *Session, cmd string) {
 	sort.Strings(keys)
 
 	log.Printf("CmdMSDP: Processing %d keys", len(keys))
-	
+
 	// Build the entire output string first to avoid blocking on channel sends
 	var output strings.Builder
 	output.WriteString("MSDP Values:\n")
-	
+
 	for i, key := range keys {
 		log.Printf("CmdMSDP: Processing key %d/%d: %s", i+1, len(keys), key)
 		value := data[key]
-		
+
 		log.Printf("CmdMSDP: Formatting value for %s", key)
 		formatted := formatMSDPValue(value, 0)
 		log.Printf("CmdMSDP: Formatted %s, length %d chars", key, len(formatted))
-		
+
 		// Handle multi-line values by indenting subsequent lines
 		lines := strings.Split(formatted, "\n")
 		if len(lines) == 1 {
@@ -222,7 +222,7 @@ func CmdMSDP(s *Session, cmd string) {
 		}
 		log.Printf("CmdMSDP: Finished key %s", key)
 	}
-	
+
 	log.Printf("CmdMSDP: Completed all keys, sending output (%d bytes)", output.Len())
 	// Send the entire output in one go to avoid blocking
 	s.Output(output.String())
@@ -246,64 +246,66 @@ func CmdTest(s *Session, cmd string) {
 func CmdSession(s *Session, cmd string) {
 	h := s.Handler
 	fields := strings.Fields(cmd)
+
+	// Handle no arguments
 	if len(fields) < 1 {
 		s.Output("Usage: #session <name> <address:port>" + "\n")
 		return
-	} else if len(fields) == 1 {
-		// Switch to existing session
-		sessionName := fields[0]
-		if _, ok := h.Sessions[sessionName]; ok {
-			h.Active = sessionName
-			activeSession := h.ActiveSession()
-			if activeSession != nil {
-				s.Sub <- SessionChangeMsg{ActiveSession: activeSession}
-			} else {
-				s.Output("Error: Could not activate session.\n")
-			}
-		} else {
-			s.Output(fmt.Sprintf("Invalid session: %s\n", sessionName))
-		}
-	} else if len(fields) == 2 {
-		// Create new session
-		sessionName := fields[0]
-		address := fields[1]
-		
-		// Validate session name format
-		if strings.Contains(sessionName, " ") {
-			s.Output("Error: Session name cannot contain spaces.\n")
-			return
-		}
-		if sessionName == "" {
-			s.Output("Error: Session name cannot be empty.\n")
-			return
-		}
-		
-		// Try to add the session
-		err := h.AddSession(sessionName, address)
-		if err != nil {
-			s.Output(fmt.Sprintf("Error creating session: %v\n", err))
-			return
-		}
-		
-		// Verify the session was created successfully
-		activeSession := h.ActiveSession()
-		if activeSession == nil {
-			s.Output("Error: Session was created but could not be activated.\n")
-			return
-		}
-		
-		// Only set active and send change message if session exists
-		h.Active = sessionName
-		s.Sub <- SessionChangeMsg{ActiveSession: activeSession}
-	} else {
-		// Too many arguments
-		if activeSess := h.ActiveSession(); activeSess != nil {
-			activeSess.Output("Usage: #session <name> <address:port>" + "\n")
-		} else {
-			s.Output("Usage: #session <name> <address:port>" + "\n")
-		}
 	}
 
+	// Handle too many arguments
+	if len(fields) > 2 {
+		s.Output("Usage: #session <name> <address:port>" + "\n")
+		return
+	}
+
+	sessionName := fields[0]
+
+	// Single argument: switch to existing session
+	if len(fields) == 1 {
+		if _, exists := h.Sessions[sessionName]; !exists {
+			s.Output(fmt.Sprintf("Invalid session: %s\n", sessionName))
+			return
+		}
+
+		h.Active = sessionName
+		activeSession := h.ActiveSession()
+		if activeSession == nil {
+			// Revert active session if lookup fails (shouldn't happen, but be safe)
+			s.Output("Error: Could not activate session.\n")
+			return
+		}
+
+		s.Sub <- SessionChangeMsg{ActiveSession: activeSession}
+		return
+	}
+
+	// Two arguments: create new session
+	// Note: AddSession already validates session name format, so we don't need to duplicate it
+	address := fields[1]
+
+	err := h.AddSession(sessionName, address)
+	if err != nil {
+		s.Output(fmt.Sprintf("Error creating session: %v\n", err))
+		return
+	}
+
+	// Verify session exists in map (more reliable than checking ActiveSession before setting Active)
+	if _, exists := h.Sessions[sessionName]; !exists {
+		s.Output("Error: Session was created but not found in session map.\n")
+		return
+	}
+
+	// Set as active and notify
+	h.Active = sessionName
+	activeSession := h.ActiveSession()
+	if activeSession == nil {
+		// This shouldn't happen if the session exists, but handle it gracefully
+		s.Output("Error: Session exists but could not be activated.\n")
+		return
+	}
+
+	s.Sub <- SessionChangeMsg{ActiveSession: activeSession}
 }
 func CmdHelp(s *Session, cmd string) {
 	msg := "Commands:\n"
@@ -354,7 +356,7 @@ func CmdSessions(s *Session, cmd string) {
 
 func CmdModules(s *Session, cmd string) {
 	fields := strings.Fields(cmd)
-	
+
 	if len(fields) == 0 {
 		// List all modules
 		var rows []table.Row
