@@ -24,8 +24,6 @@ func ParseRoom(s *session.Session, evt session.EventData) {
 		return
 	}
 
-	msg := fmt.Sprintf("Probable room from %d to %d, Room title @ %d\n", d.LastPrompt, s.Ringlog.GetCurrentRingNumber(), d.CurrentRoomRingLogID)
-	s.Output(msg)
 	ScanRoom(s, d)
 	d.CurrentRoomRingLogID = -1
 	d.LastPrompt = s.Ringlog.GetCurrentRingNumber()
@@ -43,6 +41,14 @@ func ScanRoom(s *session.Session, d *KallistiData) {
 		Exits:   make([]string, 0),
 		Objects: make([]string, 0),
 		Mobs:    make([]string, 0),
+	}
+
+	// Populate exits from Atlas
+	room := GetRoomByVNUM(s, d.CurrentRoom.Vnum)
+	if room != nil {
+		for dir := range room.Exits {
+			d.CurrentRoom.Exits = append(d.CurrentRoom.Exits, dir)
+		}
 	}
 
 	lines := s.Ringlog.GetLog(start, end)
