@@ -59,7 +59,7 @@ func RegisterSession(s *session.Session) {
 	d := s.Data["kallisti"].(*KallistiData)
 
 	// Connect to our world.db
-	d.Atlas = ConnectAtlasDB()
+	d.Atlas = ConnectAtlasDB(s.Name)
 	LoadAllRooms(s)
 	LoadAllExits(s)
 

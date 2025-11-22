@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/jmoiron/sqlx"
+	"github.com/perlsaiyan/zif/config"
 	"github.com/perlsaiyan/zif/session"
 )
 
@@ -47,8 +50,20 @@ type AtlasExitRecord struct {
 	Commands  *string `db:"commands"`
 }
 
-func ConnectAtlasDB() *sqlx.DB {
-	db, err := sqlx.Connect("sqlite3", "./db/world.db")
+func ConnectAtlasDB(sessionName string) *sqlx.DB {
+	sessionDir, err := config.GetSessionDir(sessionName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Ensure session directory exists
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		log.Fatal(err)
+	}
+
+	dbPath := filepath.Join(sessionDir, "world.db")
+
+	db, err := sqlx.Connect("sqlite3", dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}
