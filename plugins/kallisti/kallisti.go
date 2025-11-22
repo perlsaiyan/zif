@@ -26,8 +26,13 @@ type CurrentRoom struct {
 	Title       string
 	Description string
 	Exits       []string
-	Objects     []string
-	Mobs        []string
+	Objects     []RoomEntity
+	Mobs        []RoomEntity
+}
+
+type RoomEntity struct {
+	Name     string
+	Quantity int
 }
 
 type KallistiTravel struct {
@@ -141,13 +146,19 @@ func kallistiContextInjector(s *session.Session, L *lua.LState) error {
 
 			objectsTable := L.NewTable()
 			for i, obj := range d.CurrentRoom.Objects {
-				objectsTable.Insert(i+1, lua.LString(obj))
+				objTable := L.NewTable()
+				L.SetField(objTable, "name", lua.LString(obj.Name))
+				L.SetField(objTable, "quantity", lua.LNumber(obj.Quantity))
+				objectsTable.Insert(i+1, objTable)
 			}
 			L.SetField(roomTable, "objects", objectsTable)
 
 			mobsTable := L.NewTable()
 			for i, mob := range d.CurrentRoom.Mobs {
-				mobsTable.Insert(i+1, lua.LString(mob))
+				mobTable := L.NewTable()
+				L.SetField(mobTable, "name", lua.LString(mob.Name))
+				L.SetField(mobTable, "quantity", lua.LNumber(mob.Quantity))
+				mobsTable.Insert(i+1, mobTable)
 			}
 			L.SetField(roomTable, "mobs", mobsTable)
 

@@ -3,16 +3,20 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/perlsaiyan/zif/session"
 )
 
 var (
-	reRoomNoCompass = regexp.MustCompile(`^.* (\[ [ NSWEUD<>v^\|\(\)\[\]]* \] *$)`)
-	reRoomCompass   = regexp.MustCompile(`^.* \|`)
-	reRoomHere      = regexp.MustCompile(`^Here +- `)
-	reRoomNoExits   = regexp.MustCompile(`^.* \[ No exits! \]`)
-	reANSI          = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+	reRoomNoCompass    = regexp.MustCompile(`^.* (\[ [ NSWEUD<>v^\|\(\)\[\]]* \] *$)`)
+	reRoomCompass      = regexp.MustCompile(`^.* \|`)
+	reRoomHere         = regexp.MustCompile(`^Here +- `)
+	reRoomNoExits      = regexp.MustCompile(`^.* \[ No exits! \]`)
+	reANSI             = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+	reQuantityParens   = regexp.MustCompile(`\s*\((\d+)\)$`)
+	reQuantityBrackets = regexp.MustCompile(`\s*\[(\d+)\]$`)
 )
 
 func ParseRoom(s *session.Session, evt session.EventData) {
@@ -39,8 +43,8 @@ func ScanRoom(s *session.Session, d *KallistiData) {
 	d.CurrentRoom = CurrentRoom{
 		Vnum:    s.MSDP.GetString("ROOM_VNUM"),
 		Exits:   make([]string, 0),
-		Objects: make([]string, 0),
-		Mobs:    make([]string, 0),
+		Objects: make([]RoomEntity, 0),
+		Mobs:    make([]RoomEntity, 0),
 	}
 
 	// Populate exits from Atlas
@@ -57,55 +61,62 @@ func ScanRoom(s *session.Session, d *KallistiData) {
 	}
 
 	// Title is the first line
-	// Strip ANSI for title
 	d.CurrentRoom.Title = reANSI.ReplaceAllString(lines[0].Message, "")
 
-	inDescription := true
+	// State machine constants
+	const (
+		ModeDescription = iota
+		ModeObjects
+		ModeMobs
+	)
+
+	mode := ModeDescription
 
 	for i, line := range lines {
-		if i == 0 {
-			continue // Skip title
-		}
-
-		// Check for mobs
-		if (len(line.Message) > 7 && line.Message[0:7] == "\x1b[1;37m") || (len(line.Message) > 14 && line.Message[0:14] == "\x1b[0;37m\x1b[1;37m") {
-			inDescription = false
-			d.CurrentRoom.Mobs = append(d.CurrentRoom.Mobs, reANSI.ReplaceAllString(line.Message, ""))
+		// Skip Title (0), Terrain (1), Compass (2)
+		if i < 3 {
 			continue
 		}
 
-		// Check for objects
-		if len(line.Message) > 7 && line.Message[0:7] == "\x1b[0;37m" {
-			// Check if it's not a description line that happens to start with white
-			// Objects usually don't start with "Here -" or "Inside" or "The" (if it's a title, but we passed title)
-			// Actually, based on logs, objects start with \x1b[0;37m and are single lines usually.
-			// But description lines can also be white.
-			// However, description lines usually follow the title block.
-			// Let's assume once we hit an object/mob, we are out of description.
+		msg := line.Message
 
-			// Heuristic: Objects often start with "A " or "An " or "Some "
-			// But so can descriptions.
-			// The log shows objects come after the description block.
-			// Let's look for the specific object color code at start of line.
-			inDescription = false
-			d.CurrentRoom.Objects = append(d.CurrentRoom.Objects, reANSI.ReplaceAllString(line.Message, ""))
-			continue
-		}
-
-		if inDescription {
-			// Filter out the "Inside" / "City Path" / Exits lines which are usually lines 1-2
-			// They contain the compass.
-			if reRoomCompass.MatchString(line.Message) || reRoomNoCompass.MatchString(line.Message) {
-				continue
+		// Check for state transitions
+		if mode == ModeDescription {
+			if strings.HasPrefix(msg, "\x1b[0;37m") {
+				mode = ModeObjects
+			} else if strings.HasPrefix(msg, "\x1b[1;37m") {
+				mode = ModeMobs
 			}
+		} else if mode == ModeObjects {
+			if strings.HasPrefix(msg, "\x1b[1;37m") {
+				mode = ModeMobs
+			}
+		}
 
-			cleanLine := reANSI.ReplaceAllString(line.Message, "")
+		// Process based on current mode
+		switch mode {
+		case ModeDescription:
+			cleanLine := reANSI.ReplaceAllString(msg, "")
 			if cleanLine != "" {
 				if d.CurrentRoom.Description != "" {
 					d.CurrentRoom.Description += " "
 				}
 				d.CurrentRoom.Description += cleanLine
 			}
+		case ModeObjects:
+			// If we hit a blank line or just a color reset, we might be done with objects/mobs
+			// Check for end of block (blank line or just color code)
+			if strings.TrimSpace(reANSI.ReplaceAllString(msg, "")) == "" {
+				return
+			}
+
+			d.CurrentRoom.Objects = append(d.CurrentRoom.Objects, ParseEntity(reANSI.ReplaceAllString(msg, ""), reQuantityParens))
+		case ModeMobs:
+			// Check for end of block
+			if strings.TrimSpace(reANSI.ReplaceAllString(msg, "")) == "" {
+				return
+			}
+			d.CurrentRoom.Mobs = append(d.CurrentRoom.Mobs, ParseEntity(reANSI.ReplaceAllString(msg, ""), reQuantityBrackets))
 		}
 	}
 }
@@ -167,5 +178,25 @@ func PossibleRoomScanner(s *session.Session, matches session.ActionMatches) {
 			d.CurrentRoomRingLogID = s.Ringlog.GetCurrentRingNumber()
 			break
 		}
+	}
+}
+
+func ParseEntity(line string, re *regexp.Regexp) RoomEntity {
+	line = strings.TrimSpace(line)
+	// Check for quantity
+	matches := re.FindStringSubmatch(line)
+	if len(matches) > 1 {
+		qty, err := strconv.Atoi(matches[1])
+		if err == nil {
+			return RoomEntity{
+				Name:     strings.TrimSpace(re.ReplaceAllString(line, "")),
+				Quantity: qty,
+			}
+		}
+	}
+
+	return RoomEntity{
+		Name:     strings.TrimSpace(line),
+		Quantity: 1,
 	}
 }
