@@ -199,13 +199,13 @@ func CmdBFSRoomToRoom(s *session.Session, arg string) {
 	d.Travel.To = toVnum
 	d.Travel.Length = len(pathVNUMs) - 1 // don't count the room we're in
 	d.Travel.Distance = len(pathVNUMs) - 1
-	
+
 	// Check if we have a valid path with at least one direction
 	if len(pathDirections) == 0 {
 		s.Output("No valid path found\n")
 		return
 	}
-	
+
 	room := GetRoomByVNUM(s, pathVNUMs[0])
 	// Use the first direction (index 0) since pathDirections contains directions between rooms
 	var method string
@@ -247,7 +247,7 @@ func MakeMap(s *session.Session, x int, y int) string {
 	mapgrid := GetBFSGrid(s, x, y)
 
 	// make a string containing the map
-	var mapString string
+	var sb strings.Builder
 	for _, row := range mapgrid {
 		for _, room := range row {
 			if room != nil {
@@ -257,23 +257,23 @@ func MakeMap(s *session.Session, x int, y int) string {
 				if room.VNUM == s.MSDP.GetString("ROOM_VNUM") {
 					t := GetTerrainByName("You")
 					style := GetStyleByTerrain(t)
-					mapString += style.Render("@")
+					sb.WriteString(style.Render("@"))
 				} else if t != nil {
 					style := GetStyleByTerrain(t)
 					//color := GetTerrainMapColor(room.Terrain)
 					//log.Printf("Room VNUM: %s, Terrain: %s, Symbol: %s, Color: %s\n", room.VNUM, room.Terrain, glyph, color)
-					mapString += style.Render(glyph)
+					sb.WriteString(style.Render(glyph))
 				} else {
-					mapString += ":"
+					sb.WriteString(":")
 				}
 			} else {
-				mapString += " "
+				sb.WriteString(" ")
 			}
 		}
-		mapString += "\n"
+		sb.WriteString("\n")
 	}
 
-	return mapString
+	return sb.String()
 }
 
 func GetBFSGrid(s *session.Session, x int, y int) [][]*AtlasRoomRecord {

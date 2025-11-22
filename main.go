@@ -38,6 +38,7 @@ type ZifModel struct {
 	StatusBar      statusbar.Model
 	Ready          bool
 	Error          string // Track panic/error messages
+	LastMapVnum    string // Track last VNUM to avoid unnecessary map redraws
 }
 
 func (m ZifModel) Init() tea.Cmd {
@@ -779,6 +780,13 @@ func (m *ZifModel) updateMapPane() {
 	if activeSession != nil {
 		if k, ok := m.SessionHandler.Plugins.Plugins["kallisti"]; ok {
 			if activeSession.Connected {
+				// Check if VNUM has changed
+				currentVnum := activeSession.MSDP.GetString("ROOM_VNUM")
+				if currentVnum == m.LastMapVnum && mapPane.Content != "" {
+					// VNUM hasn't changed and we have content, skip redraw
+					return
+				}
+
 				tp, err := k.Plugin.Lookup("MakeMap")
 				if err == nil {
 					// Calculate map size based on pane dimensions
@@ -794,6 +802,7 @@ func (m *ZifModel) updateMapPane() {
 					mapContent := tp.(func(*session.Session, int, int) string)(
 						activeSession, mapWidth, mapHeight)
 					mapPane.Content = mapContent
+					m.LastMapVnum = currentVnum
 				}
 			}
 		}
