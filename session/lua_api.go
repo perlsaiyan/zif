@@ -3,6 +3,7 @@ package session
 import (
 	"fmt"
 	"log"
+	"reflect"
 	"regexp"
 	"runtime/debug"
 	"strings"
@@ -117,14 +118,14 @@ func (s *Session) RegisterLuaAPI() {
 				L.Push(fn)
 				L.Push(lua.LString(matches.ANSILine))
 				L.Push(lua.LString(matches.Line))
-				
+
 				// Push matches array
 				matchesTable := L.NewTable()
 				for i, match := range matches.Matches {
 					L.RawSetInt(matchesTable, i+1, lua.LString(match))
 				}
 				L.Push(matchesTable)
-				
+
 				if err := L.PCall(3, 0, nil); err != nil {
 					log.Printf("Error calling Lua trigger %s: %v", name, err)
 				}
@@ -140,6 +141,49 @@ func (s *Session) RegisterLuaAPI() {
 				module.Triggers = append(module.Triggers, name)
 			}
 		}
+
+		return 0
+	}))
+
+	// session:register_event(name, func)
+	L.SetField(sessionMT, "register_event", L.NewFunction(func(L *lua.LState) int {
+		name := L.CheckString(1)
+		fn := L.CheckFunction(2)
+
+		moduleName := GetCurrentModule(L)
+		if moduleName == "" {
+			L.RaiseError("register_event called outside of module context")
+			return 0
+		}
+
+		// Create event listener
+		listener := Event{
+			Name:    "Lua:" + moduleName + ":" + name,
+			Enabled: true,
+			Fn: func(sess *Session, data EventData) {
+				defer func() {
+					if r := recover(); r != nil {
+						stack := debug.Stack()
+						logPanic(fmt.Sprintf("Lua event %s", name), r, stack)
+						if sess != nil {
+							sess.Output(fmt.Sprintf("\nPANIC in Lua event %s: %v\n(Check ~/.config/zif/panic.log for details)\n", name, r))
+						}
+					}
+				}()
+
+				// Call Lua function with event data
+				L := sess.LuaState
+				L.Push(fn)
+				L.Push(goValueToLua(L, data))
+
+				if err := L.PCall(1, 0, nil); err != nil {
+					log.Printf("Error calling Lua event %s: %v", name, err)
+				}
+			},
+			Count: 0,
+		}
+
+		s.AddEvent(name, listener)
 
 		return 0
 	}))
@@ -181,14 +225,14 @@ func (s *Session) RegisterLuaAPI() {
 				// Call Lua function with matches
 				L := sess.LuaState
 				L.Push(fn)
-				
+
 				// Push matches array
 				matchesTable := L.NewTable()
 				for i, match := range matches {
 					L.RawSetInt(matchesTable, i+1, lua.LString(match))
 				}
 				L.Push(matchesTable)
-				
+
 				if err := L.PCall(1, 0, nil); err != nil {
 					log.Printf("Error calling Lua alias %s: %v", name, err)
 				}
@@ -831,6 +875,37 @@ func goValueToLua(L *lua.LState, val interface{}) lua.LValue {
 		}
 		return table
 	default:
+		// Fallback: try reflection for structs
+		vVal := reflect.ValueOf(val)
+		if vVal.Kind() == reflect.Ptr {
+			vVal = vVal.Elem()
+		}
+
+		if vVal.Kind() == reflect.Struct {
+			table := L.NewTable()
+			vType := vVal.Type()
+
+			for i := 0; i < vVal.NumField(); i++ {
+				field := vType.Field(i)
+				// Skip unexported fields
+				if field.PkgPath != "" {
+					continue
+				}
+
+				// Use json tag if available, otherwise field name
+				fieldName := field.Name
+				if tag := field.Tag.Get("json"); tag != "" {
+					parts := strings.Split(tag, ",")
+					if parts[0] != "" && parts[0] != "-" {
+						fieldName = parts[0]
+					}
+				}
+
+				L.SetField(table, fieldName, goValueToLua(L, vVal.Field(i).Interface()))
+			}
+			return table
+		}
+
 		// Fallback: try to convert using luaToLValue for simple types
 		return luaToLValue(L, val)
 	}
@@ -917,4 +992,3 @@ func (s *Session) UpdateContextInjector(name string) error {
 	}
 	return nil
 }
-

@@ -21,18 +21,18 @@ func logPanic(location string, panicValue interface{}, stack []byte) {
 		configDir = filepath.Join(os.Getenv("HOME"), ".config", "zif")
 		os.MkdirAll(configDir, 0755)
 	}
-	
+
 	panicLogPath := filepath.Join(configDir, "panic.log")
-	
+
 	panicInfo := fmt.Sprintf("=== PANIC at %s ===\nTime: %s\nPanic: %v\n\nStack trace:\n%s\n\n",
 		location, time.Now().Format(time.RFC3339), panicValue, string(stack))
-	
+
 	// Append to panic log file
 	if f, err := os.OpenFile(panicLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-		fmt.Fprintf(f, panicInfo)
+		fmt.Fprintf(f, "%s", panicInfo)
 		f.Close()
 	}
-	
+
 	// Also log to standard log
 	log.Printf("PANIC in %s: %v\nStack:\n%s", location, panicValue, string(stack))
 }
@@ -67,9 +67,9 @@ func SessionTicker(s *Session) {
 		if r := recover(); r != nil {
 			stack := debug.Stack()
 			logPanic("SessionTicker", r, stack)
-			
+
 			errMsg := fmt.Sprintf("PANIC in SessionTicker: %v\n(Check ~/.config/zif/panic.log for details)", r)
-			log.Printf(errMsg)
+			log.Printf("%s", errMsg)
 			if s != nil {
 				s.Output("\n" + errMsg)
 			}
@@ -89,11 +89,11 @@ func SessionTicker(s *Session) {
 				if v.NextFire.Before(time.Now()) {
 					v.LastFire = time.Now()
 					//log.Printf("Firing ticker " + v.Name + "\n")
-				if v.Fn != nil {
-					v.Fn(s)
-				} else if len(v.Command) > 0 {
-					s.Socket.Write([]byte(v.Command + LineTerminator))
-				}
+					if v.Fn != nil {
+						v.Fn(s)
+					} else if len(v.Command) > 0 {
+						s.Socket.Write([]byte(v.Command + LineTerminator))
+					}
 					// Check if timer still exists (might have been removed by one-shot timer)
 					if _, exists := s.Tickers.Entries[k]; exists {
 						v.NextFire = time.Now().Add(time.Duration(v.Interval) * time.Millisecond)

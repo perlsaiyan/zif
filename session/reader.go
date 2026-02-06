@@ -19,9 +19,9 @@ func (s *Session) mudReader() tea.Cmd {
 		if r := recover(); r != nil {
 			stack := debug.Stack()
 			logPanic("mudReader", r, stack)
-			
+
 			errMsg := fmt.Sprintf("PANIC in mudReader: %v\n(Check ~/.config/zif/panic.log for details)", r)
-			log.Printf(errMsg)
+			log.Printf("%s", errMsg)
 			if s != nil {
 				s.Output("\n" + errMsg)
 			}
@@ -60,7 +60,7 @@ func (s *Session) mudReader() tea.Cmd {
 				s.Content += linestring
 				sub <- UpdateMessage{Session: s.Name, Content: linestring}
 				// Call MUD line hooks
-				s.OnMUDLine(linestring)
+				s.OnMUDLine(linestring, strippedlinestring)
 				outbuf = outbuf[:0]
 			}
 		} else if buffer[0] == 255 {
@@ -73,19 +73,19 @@ func (s *Session) mudReader() tea.Cmd {
 				s.AddRinglogEntry(time.Now().UnixNano(), linestring, strippedlinestring)
 
 				s.Content += string(outbuf) + "\n"
-				s.FireEvent("core.prompt", EventData{})
+				s.FireEvent("core.prompt", NewBaseEvent())
 
 				sub <- UpdateMessage{Session: s.Name, Content: string(outbuf) + "\n"}
 				s.ActionParser(outbuf)
 				// Call MUD line hooks
-				s.OnMUDLine(linestring)
+				s.OnMUDLine(linestring, strippedlinestring)
 				outbuf = outbuf[:0]
 			} else if buffer[0] == 251 { // WILL
 				_, _ = s.Socket.Read(buffer)
 				log.Printf("DEBUG IAC WILL: %v (decimal: %d)", buffer[0], buffer[0])
 				if buffer[0] == 1 { // ECHO / password mask
 					log.Printf("DEBUG: Got password mask request (IAC WILL ECHO), current PasswordMode: %v, EchoNegotiated: %v, LoginComplete: %v", s.PasswordMode, s.EchoNegotiated, s.LoginComplete)
-					
+
 					// Only accept ECHO requests during login (before LoginComplete)
 					// After login is complete, ignore ECHO requests to prevent password mode from turning on in-game
 					if s.LoginComplete {
@@ -190,7 +190,7 @@ func (s *Session) mudReader() tea.Cmd {
 			s.Content += linestring + "\n"
 			sub <- UpdateMessage{Session: s.Name, Content: string(outbuf) + "\n"}
 			// Call MUD line hooks
-			s.OnMUDLine(linestring)
+			s.OnMUDLine(linestring, strippedlinestring)
 			outbuf = outbuf[:0]
 		} else {
 			outbuf = append(outbuf, buffer[0])

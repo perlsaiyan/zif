@@ -1,6 +1,8 @@
 package main
 
 import (
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -19,6 +21,13 @@ type KallistiData struct {
 	World                map[string]AtlasRoomRecord
 	Travel               KallistiTravel
 	CurrentRoom          CurrentRoom
+	Triggers             []KallistiTrigger
+}
+
+type KallistiTrigger struct {
+	Name    string
+	Pattern *regexp.Regexp
+	Fn      func(*session.Session, []string)
 }
 
 type CurrentRoom struct {
@@ -55,6 +64,7 @@ func RegisterSession(s *session.Session) {
 		LastPrompt: -1,
 		LastLine:   0,
 		World:      make(map[string]AtlasRoomRecord),
+		Triggers:   make([]KallistiTrigger, 0),
 	}
 	d := s.Data["kallisti"].(*KallistiData)
 
@@ -103,6 +113,74 @@ func RegisterSession(s *session.Session) {
 	s.AddCommand(session.Command{Name: "room", Fn: CmdRoom}, "Show room information")
 	s.AddCommand(session.Command{Name: "path", Fn: CmdBFSRoomToRoom}, "Find a path between two rooms")
 	s.AddCommand(session.Command{Name: "map", Fn: CmdShowMap}, "Show a map")
+
+	// Register Kallisti Triggers
+
+	// Crafting: "You craft [Output] made from [Input]."
+	AddKallistiTrigger(s, "Crafting", `^You craft (.+) made from (.+)\.`, func(s *session.Session, matches []string) {
+		if len(matches) < 3 {
+			return
+		}
+		// matches[1] = Output, matches[2] = Input
+		evt := NewKallistiCraftEvent("bone", "weapon", matches[2], matches[1])
+		s.FireEvent("kallisti.craft", evt)
+	})
+
+	// Carving: "You carve [Input] into [Output]."
+	AddKallistiTrigger(s, "Carving", `^You carve (.+) into (.+)\.`, func(s *session.Session, matches []string) {
+		if len(matches) < 3 {
+			return
+		}
+		// matches[1] = Input, matches[2] = Output
+		evt := NewKallistiCraftEvent("bone", "bone", matches[1], matches[2])
+		s.FireEvent("kallisti.craft", evt)
+	})
+
+	// Brewing: "You brew [Output]."
+	AddKallistiTrigger(s, "Brewing", `^You brew (.+)\.`, func(s *session.Session, matches []string) {
+		if len(matches) < 2 {
+			return
+		}
+		// matches[1] = Output
+		evt := NewKallistiCraftEvent("herb", "potion", "herbs", matches[1])
+		s.FireEvent("kallisti.craft", evt)
+	})
+
+	// Death: "[Name] is dead! R.I.P."
+	AddKallistiTrigger(s, "Death", `^(.+?)(?: \(your follower\))? is dead!  R.I.P\.`, func(s *session.Session, matches []string) {
+		if len(matches) < 2 {
+			return
+		}
+		evt := NewKallistiDeathEvent(matches[1])
+		s.FireEvent("kallisti.death", evt)
+	})
+}
+
+func AddKallistiTrigger(s *session.Session, name string, pattern string, fn func(*session.Session, []string)) {
+	if d, ok := s.Data["kallisti"].(*KallistiData); ok {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			s.Output("Error compiling trigger " + name + ": " + err.Error() + "\n")
+			return
+		}
+		d.Triggers = append(d.Triggers, KallistiTrigger{
+			Name:    name,
+			Pattern: re,
+			Fn:      fn,
+		})
+	}
+}
+
+func ProcessKallistiTriggers(s *session.Session, line string, stripped string) {
+	if d, ok := s.Data["kallisti"].(*KallistiData); ok {
+		// Strip trailing whitespace from stripped line for better matching
+		clean := strings.TrimRight(stripped, "\r\n")
+		for _, t := range d.Triggers {
+			if matches := t.Pattern.FindStringSubmatch(clean); matches != nil {
+				t.Fn(s, matches)
+			}
+		}
+	}
 }
 
 // kallistiContextInjector injects the kallisti global table into Lua
@@ -209,7 +287,7 @@ func kallistiMSDPHook(s *session.Session, msdpData map[string]interface{}) {
 }
 
 // kallistiLineHook is called when a MUD line is processed
-func kallistiLineHook(s *session.Session, line string) {
+func kallistiLineHook(s *session.Session, line string, stripped string) {
 	if s == nil || s.Data == nil {
 		return
 	}
@@ -218,6 +296,9 @@ func kallistiLineHook(s *session.Session, line string) {
 		d.LastLine = time.Now().UnixNano()
 		// Update context injector to refresh Lua state
 		s.UpdateContextInjector("kallisti")
+
+		// Process triggers
+		ProcessKallistiTriggers(s, line, stripped)
 	}
 }
 

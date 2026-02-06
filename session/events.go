@@ -2,6 +2,7 @@ package session
 
 import (
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
@@ -9,7 +10,21 @@ import (
 
 type EventFunction func(*Session, EventData)
 
-type EventData struct{}
+type EventData interface {
+	Timestamp() time.Time
+}
+
+type BaseEvent struct {
+	ts time.Time
+}
+
+func (b BaseEvent) Timestamp() time.Time {
+	return b.ts
+}
+
+func NewBaseEvent() BaseEvent {
+	return BaseEvent{ts: time.Now()}
+}
 
 type Event struct {
 	Name    string

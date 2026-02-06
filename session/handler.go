@@ -9,9 +9,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	lua "github.com/yuin/gopher-lua"
 	"github.com/perlsaiyan/zif/config"
 	kallisti "github.com/perlsaiyan/zif/protocol"
+	lua "github.com/yuin/gopher-lua"
 )
 
 // LineTerminator is the RFC 854 (Telnet) standard line terminator: CR LF
@@ -24,7 +24,7 @@ type ContextInjector func(*Session, *lua.LState) error
 type MSDPUpdateHook func(*Session, map[string]interface{})
 
 // MUDLineHook is a function type called when a MUD line is processed
-type MUDLineHook func(*Session, string)
+type MUDLineHook func(*Session, string, string)
 
 type SessionHandler struct {
 	Active   string
@@ -34,35 +34,35 @@ type SessionHandler struct {
 }
 
 type Session struct {
-	Name         string
-	Handler      *SessionHandler
-	Birth        time.Time
-	Context      context.Context
-	Cancel       context.CancelFunc
-	Content      string
-	Ringlog      RingLog
-	Address      string
-	Socket       net.Conn
-	MSDP         *kallisti.MSDPHandler
-	TTCount      int
-	PasswordMode bool
-	Connected    bool
-	Sub          chan tea.Msg
-	Tickers      *TickerRegistry
-	Actions      *ActionRegistry
-	Aliases      *AliasRegistry
-	Events       *EventRegistry
-	Queue        *QueueRegistry
-	Data         map[string]interface{}
-	LuaState     *lua.LState
-	Modules      *ModuleRegistry
+	Name           string
+	Handler        *SessionHandler
+	Birth          time.Time
+	Context        context.Context
+	Cancel         context.CancelFunc
+	Content        string
+	Ringlog        RingLog
+	Address        string
+	Socket         net.Conn
+	MSDP           *kallisti.MSDPHandler
+	TTCount        int
+	PasswordMode   bool
+	Connected      bool
+	Sub            chan tea.Msg
+	Tickers        *TickerRegistry
+	Actions        *ActionRegistry
+	Aliases        *AliasRegistry
+	Events         *EventRegistry
+	Queue          *QueueRegistry
+	Data           map[string]interface{}
+	LuaState       *lua.LState
+	Modules        *ModuleRegistry
 	EchoNegotiated bool // Infinite loop protection: track if we've responded to ECHO negotiation
-	LoginComplete   bool // Track if we've completed login (entered the game)
-	
+	LoginComplete  bool // Track if we've completed login (entered the game)
+
 	// Context injection system
 	contextInjectors map[string]ContextInjector
-	msdpUpdateHooks map[string]MSDPUpdateHook
-	mudLineHooks    map[string]MUDLineHook
+	msdpUpdateHooks  map[string]MSDPUpdateHook
+	mudLineHooks     map[string]MUDLineHook
 }
 
 // HandleInput processes the input command.
@@ -120,11 +120,11 @@ func NewHandler() SessionHandler {
 	}
 	s.Handler = &sh
 	sh.Sessions["zif"] = &s
-	
+
 	// Initialize context for the default session
 	ctx := context.Background()
 	s.Context, s.Cancel = context.WithCancel(ctx)
-	
+
 	// Initialize Lua state and registries for the default session
 	s.LuaState = lua.NewState()
 	s.Actions = NewActionRegistry()
@@ -137,7 +137,7 @@ func NewHandler() SessionHandler {
 	s.contextInjectors = make(map[string]ContextInjector)
 	s.msdpUpdateHooks = make(map[string]MSDPUpdateHook)
 	s.mudLineHooks = make(map[string]MUDLineHook)
-	
+
 	// Initialize ticker registry (requires context)
 	NewTickerRegistry(s.Context, &s)
 
@@ -158,7 +158,7 @@ func NewHandler() SessionHandler {
 	if err := LoadSessionModules(&s, "zif"); err != nil {
 		log.Printf("Warning: failed to load session modules: %v", err)
 	}
-	
+
 	return sh
 }
 
@@ -198,10 +198,10 @@ func (s *SessionHandler) AddSession(name, address string) error {
 		Data:     make(map[string]interface{}),
 		LuaState: lua.NewState(),
 		Modules:  NewModuleRegistry(),
-		
+
 		contextInjectors: make(map[string]ContextInjector),
-		msdpUpdateHooks: make(map[string]MSDPUpdateHook),
-		mudLineHooks:    make(map[string]MUDLineHook),
+		msdpUpdateHooks:  make(map[string]MSDPUpdateHook),
+		mudLineHooks:     make(map[string]MUDLineHook),
 	}
 
 	// Initialize the priority Queue
@@ -309,13 +309,13 @@ func (s *Session) OnMSDPUpdate(msdpData map[string]interface{}) {
 }
 
 // OnMUDLine calls all registered MUD line hooks with the line content
-func (s *Session) OnMUDLine(line string) {
+func (s *Session) OnMUDLine(line string, stripped string) {
 	if s == nil || s.mudLineHooks == nil {
 		return
 	}
 	for _, hook := range s.mudLineHooks {
 		if hook != nil {
-			hook(s, line)
+			hook(s, line, stripped)
 		}
 	}
 }
