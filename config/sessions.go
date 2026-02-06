@@ -19,6 +19,8 @@ type SessionConfig struct {
 	Name      string `yaml:"name"`
 	Address   string `yaml:"address"`
 	Autostart bool   `yaml:"autostart"`
+	Username  string `yaml:"username,omitempty"`
+	Password  string `yaml:"password,omitempty"`
 }
 
 // GetSessionsConfigPath returns the path to sessions.yaml in the XDG config directory

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -116,6 +117,57 @@ func RegisterSession(s *session.Session) {
 
 	// Register Kallisti Triggers
 
+	// Login: "Enter your account name."
+	AddKallistiTrigger(s, "LoginUsername", `Enter your account name`, func(s *session.Session, matches []string) {
+		if username, ok := s.Data["username"].(string); ok && username != "" {
+			log.Printf("DEBUG LoginUsername: sending username %q", username)
+			s.Socket.Write([]byte(username + "\r\n"))
+		} else {
+			log.Printf("DEBUG LoginUsername: no username in session data (keys: %v)", dataKeys(s.Data))
+		}
+	})
+
+	// Login: "Please enter your account password"
+	AddKallistiTrigger(s, "LoginPassword", `Please enter your account password`, func(s *session.Session, matches []string) {
+		if password, ok := s.Data["password"].(string); ok && password != "" {
+			log.Printf("DEBUG LoginPassword: sending password")
+			s.Socket.Write([]byte(password + "\r\n"))
+			delete(s.Data, "password") // Clear after use
+		} else {
+			log.Printf("DEBUG LoginPassword: no password in session data")
+		}
+	})
+
+	// MOTD: "Have fun, and tell a friend about us!" - press enter to continue
+	AddKallistiTrigger(s, "LoginMOTD", `Have fun, and tell a friend about us!`, func(s *session.Session, matches []string) {
+		log.Printf("DEBUG LoginMOTD: sending CR")
+		s.Socket.Write([]byte("\r\n"))
+	})
+
+	// Account menu: capture active character name and remove login triggers
+	AddKallistiTrigger(s, "LoginAccountMenu", `Active Character:\s+(\S+)`, func(s *session.Session, matches []string) {
+		if len(matches) >= 2 {
+			charName := matches[1]
+			log.Printf("DEBUG LoginAccountMenu: active character is %q", charName)
+			s.Data["character"] = charName
+		}
+		// Remove login triggers - they're no longer needed
+		RemoveKallistiTrigger(s, "LoginUsername")
+		RemoveKallistiTrigger(s, "LoginPassword")
+		RemoveKallistiTrigger(s, "LoginMOTD")
+		RemoveKallistiTrigger(s, "LoginAccountMenu")
+	})
+
+	// Reconnect: already in use, login complete
+	AddKallistiTrigger(s, "LoginReconnect", `Your character was already in use`, func(s *session.Session, matches []string) {
+		log.Printf("DEBUG LoginReconnect: reconnect detected, removing login triggers")
+		RemoveKallistiTrigger(s, "LoginUsername")
+		RemoveKallistiTrigger(s, "LoginPassword")
+		RemoveKallistiTrigger(s, "LoginMOTD")
+		RemoveKallistiTrigger(s, "LoginAccountMenu")
+		RemoveKallistiTrigger(s, "LoginReconnect")
+	})
+
 	// Crafting: "You craft [Output] made from [Input]."
 	AddKallistiTrigger(s, "Crafting", `^You craft (.+) made from (.+)\.`, func(s *session.Session, matches []string) {
 		if len(matches) < 3 {
@@ -156,6 +208,14 @@ func RegisterSession(s *session.Session) {
 	})
 }
 
+func dataKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func AddKallistiTrigger(s *session.Session, name string, pattern string, fn func(*session.Session, []string)) {
 	if d, ok := s.Data["kallisti"].(*KallistiData); ok {
 		re, err := regexp.Compile(pattern)
@@ -171,12 +231,26 @@ func AddKallistiTrigger(s *session.Session, name string, pattern string, fn func
 	}
 }
 
+func RemoveKallistiTrigger(s *session.Session, name string) {
+	if d, ok := s.Data["kallisti"].(*KallistiData); ok {
+		for i, t := range d.Triggers {
+			if t.Name == name {
+				d.Triggers = append(d.Triggers[:i], d.Triggers[i+1:]...)
+				log.Printf("DEBUG: Removed kallisti trigger %q", name)
+				return
+			}
+		}
+	}
+}
+
 func ProcessKallistiTriggers(s *session.Session, line string, stripped string) {
 	if d, ok := s.Data["kallisti"].(*KallistiData); ok {
 		// Strip trailing whitespace from stripped line for better matching
 		clean := strings.TrimRight(stripped, "\r\n")
+		log.Printf("DEBUG kallisti triggers: checking %d triggers against: %q", len(d.Triggers), clean)
 		for _, t := range d.Triggers {
 			if matches := t.Pattern.FindStringSubmatch(clean); matches != nil {
+				log.Printf("DEBUG kallisti trigger matched: %s", t.Name)
 				t.Fn(s, matches)
 			}
 		}

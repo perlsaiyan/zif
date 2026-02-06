@@ -29,7 +29,6 @@ const useHighPerformanceRenderer = false
 
 type ZifModel struct {
 	Name           string
-	Config         *config.Config
 	Plugins        []*plugin.Plugin
 	Input          textinput.Model
 	Viewport       viewport.Model // Kept for backward compatibility during transition
@@ -131,7 +130,7 @@ func logPanic(location string, panicValue interface{}, stack []byte) {
 
 	// Append to panic log file
 	if f, err := os.OpenFile(panicLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-		fmt.Fprintf(f, panicInfo)
+		fmt.Fprint(f, panicInfo)
 		f.Close()
 	}
 
@@ -836,42 +835,8 @@ func main() {
 	m.Input.CharLimit = 156
 	m.Input.Width = 20
 
-	// Load and auto-start sessions from sessions.yaml (unless --no-autostart flag is set)
-	if !*noAutostartFlag {
-		sessionsConfig, err := config.LoadSessionsConfig()
-		if err != nil {
-			log.Printf("Warning: failed to load sessions config: %v", err)
-		} else {
-			// Auto-start all configured sessions with autostart enabled
-			for _, sessionConfig := range sessionsConfig.Sessions {
-				if sessionConfig.Autostart && sessionConfig.Name != "" && sessionConfig.Address != "" {
-					err := m.SessionHandler.AddSession(sessionConfig.Name, sessionConfig.Address)
-					if err != nil {
-						log.Printf("Warning: failed to autostart session %s: %v", sessionConfig.Name, err)
-					}
-				}
-			}
-			// Set the first session as active if any sessions were loaded
-			if len(sessionsConfig.Sessions) > 0 && len(m.SessionHandler.Sessions) > 1 {
-				// Find the first successfully created session with autostart enabled (not the default "zif" session)
-				for _, sessionConfig := range sessionsConfig.Sessions {
-					if sessionConfig.Autostart {
-						if _, exists := m.SessionHandler.Sessions[sessionConfig.Name]; exists {
-							m.SessionHandler.Active = sessionConfig.Name
-							activeSession := m.SessionHandler.ActiveSession()
-							if activeSession != nil {
-								m.SessionHandler.Sub <- session.SessionChangeMsg{ActiveSession: activeSession}
-							}
-							break
-						}
-					}
-				}
-			}
-		}
-	}
-
+	// Load plugins before sessions so they're registered when mudReader starts
 	if *kallistiFlag {
-
 		p, err := plugin.Open("./kallisti.so")
 		if err != nil {
 			fmt.Printf("Error locating kallisti plugin: %s.\n", err.Error())
@@ -885,10 +850,9 @@ func main() {
 			version = "unknown"
 		}
 		m.SessionHandler.Plugins.Plugins["kallisti"] = session.PluginInfo{Plugin: p, Name: "Kallisti", Version: version, Description: "Legends of Kallisti convenience add-ons"}
-
 	}
 
-	// Register plugins for all existing sessions (including default "zif" session)
+	// Register plugins for the default "zif" session
 	if len(m.SessionHandler.Plugins.Plugins) > 0 {
 		for _, sess := range m.SessionHandler.Sessions {
 			for _, v := range m.SessionHandler.Plugins.Plugins {
@@ -900,7 +864,6 @@ func main() {
 				}
 				f.(func(*session.Session))(sess)
 			}
-			// Inject context after plugins have registered their injectors
 			if err := sess.InjectContext(); err != nil {
 				log.Printf("Warning: failed to inject context for session %s: %v", sess.Name, err)
 			}
@@ -909,6 +872,52 @@ func main() {
 		activeSession := m.SessionHandler.ActiveSession()
 		if activeSession != nil {
 			activeSession.Output("Installed Plugins:\n" + m.SessionHandler.PluginMOTD() + "\n")
+		}
+	}
+
+	// Load and auto-start sessions from sessions.yaml (unless --no-autostart flag is set)
+	// Plugins are already loaded above, so AddSession will register them and their
+	// triggers before mudReader starts.
+	if !*noAutostartFlag {
+		sessionsConfig, err := config.LoadSessionsConfig()
+		if err != nil {
+			log.Printf("Warning: failed to load sessions config: %v", err)
+		} else {
+			for _, sessionConfig := range sessionsConfig.Sessions {
+				if sessionConfig.Autostart && sessionConfig.Name != "" && sessionConfig.Address != "" {
+					// Store credentials before AddSession so they're available
+					// when plugin triggers fire during login
+					m.SessionHandler.PendingSessionData = map[string]interface{}{}
+					if sessionConfig.Username != "" {
+						m.SessionHandler.PendingSessionData["username"] = sessionConfig.Username
+					}
+					if sessionConfig.Password != "" {
+						m.SessionHandler.PendingSessionData["password"] = sessionConfig.Password
+					}
+
+					err := m.SessionHandler.AddSession(sessionConfig.Name, sessionConfig.Address)
+					m.SessionHandler.PendingSessionData = nil
+					if err != nil {
+						log.Printf("Warning: failed to autostart session %s: %v", sessionConfig.Name, err)
+						continue
+					}
+				}
+			}
+			// Set the first session as active if any sessions were loaded
+			if len(sessionsConfig.Sessions) > 0 && len(m.SessionHandler.Sessions) > 1 {
+				for _, sessionConfig := range sessionsConfig.Sessions {
+					if sessionConfig.Autostart {
+						if _, exists := m.SessionHandler.Sessions[sessionConfig.Name]; exists {
+							m.SessionHandler.Active = sessionConfig.Name
+							activeSession := m.SessionHandler.ActiveSession()
+							if activeSession != nil {
+								m.SessionHandler.Sub <- session.SessionChangeMsg{ActiveSession: activeSession}
+							}
+							break
+						}
+					}
+				}
+			}
 		}
 	}
 

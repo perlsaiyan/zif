@@ -5,7 +5,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
-	"github.com/perlsaiyan/zif/config"
 )
 
 type PluginRegistry struct {
@@ -17,15 +16,6 @@ type PluginInfo struct {
 	Name        string
 	Version     string
 	Description string
-}
-
-// LoadPlugin loads a plugin from the given path.
-func LoadPlugin(path string, config *config.Config) (*plugin.Plugin, error) {
-	plug, err := plugin.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	return plug, nil
 }
 
 // NewPluginRegistry creates and initializes a new PluginRegistry.

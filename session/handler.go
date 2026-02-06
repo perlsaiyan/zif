@@ -27,10 +27,11 @@ type MSDPUpdateHook func(*Session, map[string]interface{})
 type MUDLineHook func(*Session, string, string)
 
 type SessionHandler struct {
-	Active   string
-	Sessions map[string]*Session
-	Plugins  *PluginRegistry
-	Sub      chan tea.Msg
+	Active             string
+	Sessions           map[string]*Session
+	Plugins            *PluginRegistry
+	Sub                chan tea.Msg
+	PendingSessionData map[string]interface{} // Pre-populated data for the next AddSession call
 }
 
 type Session struct {
@@ -263,6 +264,14 @@ func (s *SessionHandler) AddSession(name, address string) error {
 	// Inject context after plugins have registered their injectors
 	if err := newSession.InjectContext(); err != nil {
 		log.Printf("Warning: failed to inject context: %v", err)
+	}
+
+	// Merge any pending session data (e.g. credentials from sessions.yaml)
+	// before mudReader starts so triggers can access them immediately
+	if s.PendingSessionData != nil {
+		for k, v := range s.PendingSessionData {
+			newSession.Data[k] = v
+		}
 	}
 
 	go newSession.mudReader()
