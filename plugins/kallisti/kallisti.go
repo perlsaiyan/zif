@@ -168,33 +168,40 @@ func RegisterSession(s *session.Session) {
 		RemoveKallistiTrigger(s, "LoginReconnect")
 	})
 
-	// Crafting: "You craft [Output] made from [Input]."
-	AddKallistiTrigger(s, "Crafting", `^You craft (.+) made from (.+)\.`, func(s *session.Session, matches []string) {
-		if len(matches) < 3 {
+	// Tanning: "You tan (quality) hide (from source) into (quality) leather (from source)."
+	AddKallistiTrigger(s, "Tanning", `^You tan (.+) hide \(from (.+)\) into (.+) leather \(from .+\)\.`, func(s *session.Session, matches []string) {
+		if len(matches) < 4 {
 			return
 		}
-		// matches[1] = Output, matches[2] = Input
-		evt := NewKallistiCraftEvent("bone", "weapon", matches[2], matches[1])
+		// matches[1] = input quality, matches[2] = source, matches[3] = output quality
+		evt := NewKallistiCraftEvent("tanning", "hide", "leather", matches[1], matches[3], "", matches[2])
 		s.FireEvent("kallisti.craft", evt)
 	})
 
-	// Carving: "You carve [Input] into [Output]."
-	AddKallistiTrigger(s, "Carving", `^You carve (.+) into (.+)\.`, func(s *session.Session, matches []string) {
-		if len(matches) < 3 {
+	// Bonecrafting: "You craft a (quality) (item) made from (source) bone."
+	AddKallistiTrigger(s, "Bonecrafting", `^You craft an? (.+?) (.+) made from (.+) bone\.`, func(s *session.Session, matches []string) {
+		if len(matches) < 4 {
 			return
 		}
-		// matches[1] = Input, matches[2] = Output
-		evt := NewKallistiCraftEvent("bone", "bone", matches[1], matches[2])
+		evt := NewKallistiCraftEvent("bonecrafting", "bone", matches[2], "", matches[1], matches[2], matches[3])
 		s.FireEvent("kallisti.craft", evt)
 	})
 
-	// Brewing: "You brew [Output]."
-	AddKallistiTrigger(s, "Brewing", `^You brew (.+)\.`, func(s *session.Session, matches []string) {
-		if len(matches) < 2 {
+	// Carving: "You carve some (quality) bone (from source) into some (quality) bone (from source)."
+	AddKallistiTrigger(s, "Carving", `^You carve some (.+) bone \(from (.+)\) into some (.+) bone \(from .+\)\.`, func(s *session.Session, matches []string) {
+		if len(matches) < 4 {
 			return
 		}
-		// matches[1] = Output
-		evt := NewKallistiCraftEvent("herb", "potion", "herbs", matches[1])
+		evt := NewKallistiCraftEvent("carving", "bone", "bone", matches[1], matches[3], "", matches[2])
+		s.FireEvent("kallisti.craft", evt)
+	})
+
+	// Brewing: "You brew a (quality) potion of (name)."
+	AddKallistiTrigger(s, "Brewing", `^You brew an? (.+) potion of (.+)\.`, func(s *session.Session, matches []string) {
+		if len(matches) < 3 {
+			return
+		}
+		evt := NewKallistiCraftEvent("brewing", "herb", "potion", "", matches[1], matches[2], "")
 		s.FireEvent("kallisti.craft", evt)
 	})
 
